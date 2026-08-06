@@ -1,25 +1,16 @@
 # PTDT-TriState-Unified-v33
 
-Unified digital twin + Capacitor iOS app.
+Cinematic CG frontend + self-contained Windows 11 .exe
 
-## Web
+## Windows 11 .exe
+```bash
+npm install
+npm run dist:win
+```
+Output: `release/PTDT Unified V33 Setup.exe` and portable .exe
+
+## Dev
 ```bash
 npm install
 npm run dev
 ```
-
-## iPhone (Capacitor)
-```bash
-npm install
-npm run build
-npx cap add ios
-npx cap sync ios
-npx cap open ios
-```
-Requires Xcode on macOS. App ID: `com.ptdt.unified.v33`
-
-## Components
-- GeoTIFF worker
-- MapLibre depth filters + WebGL2 flood shaders
-- rasFloodBridge
-- PostGIS docker-compose
