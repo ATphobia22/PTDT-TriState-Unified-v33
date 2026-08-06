@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: ptdt_postgis
+    environment:
+      POSTGRES_USER: ptdt
+      POSTGRES_PASSWORD: ptdt
+      POSTGRES_DB: ptdt
+    ports:
+      - "8087:5432"
+    volumes:
+      - ./volumes/postgresql_data:/var/lib/postgresql/data
+      - ./volumes/postgresql_init.d:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ptdt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

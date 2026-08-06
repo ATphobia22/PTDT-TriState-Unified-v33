@@ -1,0 +1,12 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
+CREATE TABLE IF NOT EXISTS twin_ras_cells (
+  id SERIAL PRIMARY KEY,
+  plan_id TEXT,
+  lon DOUBLE PRECISION,
+  lat DOUBLE PRECISION,
+  depth_m DOUBLE PRECISION,
+  wse_m DOUBLE PRECISION,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_twin_ras_cells_pt ON twin_ras_cells USING GIST (ST_SetSRID(ST_MakePoint(lon, lat), 4326));
