@@ -1,6 +1,11 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.setAppUserModelId('com.ptdt.unified.v33');
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1920,
@@ -13,11 +18,16 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true,
+      backgroundThrottling: false,
     },
     title: 'PTDT Unified V33 — Virtual Tri-State River Valley',
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
+
   win.loadFile(path.join(__dirname, '../dist/index.html'));
   win.setMenuBarVisibility(false);
 

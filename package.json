@@ -35,11 +35,19 @@
     "files": ["dist/**/*", "electron/**/*"],
     "win": {
       "target": ["nsis", "portable"],
-      "arch": ["x64"]
+      "arch": ["x64"],
+      "artifactName": "PTDT-Unified-V33-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "PTDT Unified V33"
+    },
+    "portable": {
+      "artifactName": "PTDT-Unified-V33-Portable.exe"
     }
   }
 }
