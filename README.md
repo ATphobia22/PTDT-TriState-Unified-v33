@@ -1,18 +1,16 @@
 # PTDT-TriState-Unified-v33
 
-Virtual Tri-State River Valley — Cinematic CGI + Windows 11 standalone
+Production Windows 11 cinematic digital twin
 
-## Windows 11 .EXE
+## Build .EXE
 ```bash
-npm install
-npm run dist:win
+npm i && npm run dist:win
 ```
-→ `release/PTDT-Unified-V33-Portable.exe`
 
-Optional Inno Setup: compile `installer/TriRiverTwin_Win11.iss`
+## Inno Setup (optional full installer)
+Compile `installer/TriRiverTwin_Win11.iss` with Inno Setup.
 
-## Cinematic CGI
-- CineCamera tracks (aerial / homestead / confluence)
-- Weather state machine (clear / mist / heavyRain)
-- ShaderMaterial flood water + foam + fresnel
-- GPU flags + AppUserModelId for Windows
+## Data Sync
+- `middleware/sync-engine.js` — local static GIS bootstrap
+- `middleware/ras-sync-router.js` — HEC-RAS results ingest
+- PostGIS tables: twin_ras_cells + twin_static_parcels
