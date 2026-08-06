@@ -1,13 +1,25 @@
 # PTDT-TriState-Unified-v33
 
-Combined **Point Township Digital Twin v33** + **Tri-State River Valley Engineering System**.
+Unified digital twin + Capacitor iOS app.
 
-## Optimized components
-- GeoTIFF worker (interleave + stride + batch)
-- MapLibre custom depth filters + WebGL2 flood surface shaders
-- PostGIS twin_ras_cells + Docker
+## Web
+```bash
+npm install
+npm run dev
+```
+
+## iPhone (Capacitor)
+```bash
+npm install
+npm run build
+npx cap add ios
+npx cap sync ios
+npx cap open ios
+```
+Requires Xcode on macOS. App ID: `com.ptdt.unified.v33`
+
+## Components
+- GeoTIFF worker
+- MapLibre depth filters + WebGL2 flood shaders
 - rasFloodBridge
-
-## Sources
-- https://github.com/ATphobia22/PTDT-v33
-- https://github.com/ATphobia22/Tri-State-River-Valley-Engineering-System
+- PostGIS docker-compose
