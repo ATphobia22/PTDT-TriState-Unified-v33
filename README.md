@@ -1,16 +1,17 @@
 # PTDT-TriState-Unified-v33
 
-Cinematic CG frontend + self-contained Windows 11 .exe
+Virtual Tri-State River Valley — Cinematic CGI + Windows 11 self-contained .exe
 
-## Windows 11 .exe
+## Build Windows 11 .exe
 ```bash
 npm install
 npm run dist:win
 ```
-Output: `release/PTDT Unified V33 Setup.exe` and portable .exe
+→ `release/PTDT Unified V33 Setup.exe` (NSIS) + portable .exe
 
-## Dev
-```bash
-npm install
-npm run dev
-```
+## Features
+- MapLibre dark cinematic base + fog/atmosphere
+- Three.js river-valley terrain mesh
+- Dynamic flood water (physical material + waves)
+- Particle spray, ACES tone mapping, hemisphere lighting
+- Full GeoTIFF worker, MapLibre depth filters, PostGIS
