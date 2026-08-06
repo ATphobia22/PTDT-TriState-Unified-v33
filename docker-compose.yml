@@ -12,7 +12,19 @@ services:
       - ./volumes/postgresql_data:/var/lib/postgresql/data
       - ./volumes/postgresql_init.d:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ptdt"]
+      test: ["CMD-SHELL", "pg_isready -U ptdt -d ptdt"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  qgis:
+    image: kartoza/qgis-server:latest
+    container_name: ptdt_qgis
+    ports:
+      - "8085:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
