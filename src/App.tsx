@@ -25,6 +25,7 @@ export default function App() {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
 
     map.on('style.load', () => {
+      // @ts-expect-error setFog exists in maplibregl runtime but not in type definitions
       map.setFog({
         color: 'rgb(8, 18, 32)',
         'high-color': 'rgb(18, 36, 62)',
