@@ -2,7 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as THREE from 'three';
-import { depthColorExpression } from './map/maplibreCustomFilters';
+import { createDisplacedTerrain } from './cgi/TerrainDisplacement';
+import { stageVsBfe, compensatoryStorage, SITE } from './lib/elevationCheck';
 
 export default function App() {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -11,7 +12,6 @@ export default function App() {
   useEffect(() => {
     if (!mapRef.current || !threeRef.current) return;
 
-    // ── MapLibre base (Tri-State cinematic camera) ──────────────────────
     const map = new maplibregl.Map({
       container: mapRef.current,
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
@@ -34,7 +34,6 @@ export default function App() {
       });
     });
 
-    // ── Three.js cinematic water + terrain CGI ─────────────────────────
     const canvas = threeRef.current;
     const renderer = new THREE.WebGLRenderer({
       canvas,
@@ -54,32 +53,16 @@ export default function App() {
     camera.position.set(0, 12, 28);
     camera.lookAt(0, 0, 0);
 
-    // Terrain mesh (gentle river valley)
-    const terrainGeo = new THREE.PlaneGeometry(80, 80, 96, 96);
-    const tPos = terrainGeo.attributes.position;
-    for (let i = 0; i < tPos.count; i++) {
-      const x = tPos.getX(i);
-      const y = tPos.getY(i);
-      const h =
-        Math.sin(x * 0.08) * 1.8 +
-        Math.cos(y * 0.07) * 1.4 +
-        Math.sin((x + y) * 0.05) * 0.9 -
-        Math.exp(-((x * x + y * y) * 0.0015)) * 3.5; // river depression
-      tPos.setZ(i, h);
-    }
-    terrainGeo.computeVertexNormals();
-    const terrainMat = new THREE.MeshStandardMaterial({
+    const terrain = createDisplacedTerrain({
+      heightUrl: '/tiles/posey_height_preview.png',
+      width: 80,
+      depth: 80,
+      segments: 256,
+      displacementScale: 42,
       color: 0x1a2f1a,
-      roughness: 0.85,
-      metalness: 0.05,
-      flatShading: false,
     });
-    const terrain = new THREE.Mesh(terrainGeo, terrainMat);
-    terrain.rotation.x = -Math.PI / 2;
-    terrain.position.y = -1.2;
     scene.add(terrain);
 
-    // Dynamic flood water surface
     const waterGeo = new THREE.PlaneGeometry(70, 70, 160, 160);
     const waterMat = new THREE.MeshPhysicalMaterial({
       color: 0x0a6ea8,
@@ -96,16 +79,12 @@ export default function App() {
     water.position.y = 0.15;
     scene.add(water);
 
-    // Lighting
     const sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
     sun.position.set(18, 32, 12);
-    sun.castShadow = false;
     scene.add(sun);
     scene.add(new THREE.AmbientLight(0x2a3f55, 0.55));
-    const hemi = new THREE.HemisphereLight(0x87b5e0, 0x1a2a1a, 0.4);
-    scene.add(hemi);
+    scene.add(new THREE.HemisphereLight(0x87b5e0, 0x1a2a1a, 0.4));
 
-    // Soft particle spray over water
     const sprayCount = 400;
     const sprayGeo = new THREE.BufferGeometry();
     const sprayPos = new Float32Array(sprayCount * 3);
@@ -121,6 +100,10 @@ export default function App() {
     );
     scene.add(spray);
 
+    console.log('[PTDT] LAG check', stageVsBfe(SITE.lag_ft));
+    console.log('[PTDT] Berm check', stageVsBfe(SITE.berm_crest_ft));
+    console.log('[PTDT] Storage', compensatoryStorage(1000));
+
     let t = 0;
     const animate = () => {
       t += 0.014;
@@ -128,16 +111,11 @@ export default function App() {
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i);
         const y = pos.getY(i);
-        const z =
-          Math.sin(x * 0.35 + t * 1.4) * 0.22 +
-          Math.cos(y * 0.28 + t * 1.1) * 0.16 +
-          Math.sin((x + y) * 0.2 + t * 1.9) * 0.09;
-        pos.setZ(i, z);
+        pos.setZ(i, Math.sin(x * 0.35 + t * 1.4) * 0.22 + Math.cos(y * 0.28 + t * 1.1) * 0.16 + Math.sin((x + y) * 0.2 + t * 1.9) * 0.09);
       }
       pos.needsUpdate = true;
       waterGeo.computeVertexNormals();
 
-      // drift spray
       const sp = sprayGeo.attributes.position as THREE.BufferAttribute;
       for (let i = 0; i < sprayCount; i++) {
         let py = sp.getY(i) + 0.008;
@@ -152,10 +130,8 @@ export default function App() {
     animate();
 
     const onResize = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
     };
     window.addEventListener('resize', onResize);
@@ -170,18 +146,9 @@ export default function App() {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#0a1628' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-      <canvas
-        ref={threeRef}
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.85 }}
-      />
-      <div style={{
-        position: 'absolute', top: 14, left: 14, right: 14,
-        background: 'rgba(8,16,28,0.9)', color: '#e0f2fe',
-        padding: '11px 16px', borderRadius: 11, fontSize: 14,
-        backdropFilter: 'blur(14px)', border: '1px solid rgba(56,189,248,0.22)',
-        fontFamily: 'system-ui,Segoe UI,sans-serif', letterSpacing: 0.3,
-      }}>
-        PTDT Unified V33 — Virtual Tri-State River Valley · Cinematic CGI
+      <canvas ref={threeRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.85 }} />
+      <div style={{ position: 'absolute', top: 14, left: 14, right: 14, background: 'rgba(8,16,28,0.9)', color: '#e0f2fe', padding: '11px 16px', borderRadius: 11, fontSize: 14, backdropFilter: 'blur(14px)', border: '1px solid rgba(56,189,248,0.22)', fontFamily: 'system-ui,Segoe UI,sans-serif' }}>
+        PTDT Unified V33 — Virtual Tri-State River Valley · Posey DEM + Archimedes BFE 375.0 ft NAVD88
       </div>
     </div>
   );
