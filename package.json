@@ -22,6 +22,7 @@
   "devDependencies": {
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.185.4",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
@@ -31,11 +32,19 @@
   "build": {
     "appId": "com.ptdt.unified.v33",
     "productName": "PTDT Unified V33",
-    "directories": { "output": "release" },
-    "files": ["dist/**/*", "electron/**/*"],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
     "win": {
-      "target": ["nsis", "portable"],
-      "arch": ["x64"],
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "signAndEditExecutable": false,
       "artifactName": "PTDT-Unified-V33-${version}-${arch}.${ext}"
     },
     "nsis": {
