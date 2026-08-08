@@ -44,9 +44,7 @@
         "nsis",
         "portable"
       ],
-      "arch": [
-        "x64"
-      ],
+      "signAndEditExecutable": false,
       "artifactName": "PTDT-Unified-V33-${version}-${arch}.${ext}"
     },
     "nsis": {
