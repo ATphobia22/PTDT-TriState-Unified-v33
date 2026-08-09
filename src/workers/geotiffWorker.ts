@@ -22,7 +22,6 @@ self.onmessage = async (e: MessageEvent<WorkerIn>) => {
   } = e.data;
 
   try {
-    // @ts-expect-error GeoTIFF loaded via importScripts or bundler
     const GeoTIFF = (self as any).GeoTIFF;
     if (!GeoTIFF) throw new Error("GeoTIFF library not loaded in worker");
 
