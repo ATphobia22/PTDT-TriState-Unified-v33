@@ -79,17 +79,16 @@ def bishop_to_exchange(
     datum: str,
     units: str,
 ) -> ExchangePayload:
-    """Create an authoritative DERIVED stability exchange without promoting PTDT."""
-    assert_authorized("Bishop", AuthorityDomain.DERIVED_DISPLAY)
+    """Create an authoritative SLOPE_STABILITY exchange for downstream display."""
+    assert_authorized("Bishop", AuthorityDomain.SLOPE_STABILITY)
     if provenance.source_model != "Bishop":
         raise ValueError("Bishop payload provenance must identify Bishop as source_model")
     if provenance.datum != datum or provenance.units != units:
         raise ValueError("payload datum/units must match provenance")
     result = simplified_bishop_factor_of_safety(slices)
     status = ModelStatus.VALID if result.converged else ModelStatus.INVALID
-    if status is ModelStatus.VALID and not can_promote(status, AuthorityDomain.DERIVED_DISPLAY):
-        # DERIVED_DISPLAY is deliberately not an authoritative promotion domain.
-        status = ModelStatus.VALID
+    if status is ModelStatus.VALID and not can_promote(status, AuthorityDomain.SLOPE_STABILITY):
+        raise PermissionError("Bishop cannot promote into SLOPE_STABILITY")
     return ExchangePayload(
         values={
             "factor_of_safety": result.factor_of_safety,
