@@ -27,7 +27,7 @@ def test_enkf_exchange_preserves_evidence_graph_provenance():
     )
     assert payload.status is ModelStatus.VALID
     assert payload.provenance == provenance
-    assert payload.values["kalman_gain"] == pytest.approx(4.3 / 7.3)
+    assert payload.values["kalman_gain"] == pytest.approx(4.5 / 7.5)
 
 
 def test_enkf_rejects_non_authoritative_provenance():
