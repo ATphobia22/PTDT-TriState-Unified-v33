@@ -1,12 +1,9 @@
--- Spatial indexes with GIST fillfactor tuning
--- fillfactor 90: denser leaf pages (point data, read-heavy flood queries)
--- buffering=on: reduce fragmentation on concurrent inserts
+-- GIST optimization: fillfactor 90 + buffering for read-heavy point/parcel lookups.
+-- Re-run ANALYZE after bulk HEC-RAS loads.
 
 DROP INDEX IF EXISTS idx_twin_ras_cells_point;
 CREATE INDEX idx_twin_ras_cells_point
-  ON twin_ras_cells USING GIST (
-    ST_SetSRID(ST_MakePoint(lon, lat), 4326)
-  )
+  ON twin_ras_cells USING GIST (ST_SetSRID(ST_MakePoint(lon, lat), 4326))
   WITH (fillfactor = 90, buffering = on);
 
 CREATE INDEX IF NOT EXISTS idx_twin_ras_cells_plan_depth
@@ -24,6 +21,9 @@ CREATE INDEX idx_twin_static_parcels_geom
 CREATE INDEX IF NOT EXISTS idx_twin_static_parcels_asset
   ON twin_static_parcels ((metadata->>'ASSET_ID'));
 
+-- REINDEX after large imports if needed:
+-- REINDEX INDEX CONCURRENTLY idx_twin_ras_cells_point;
+
 ANALYZE twin_ras_cells;
 ANALYZE twin_static_parcels;
 
@@ -35,8 +35,7 @@ CREATE OR REPLACE FUNCTION twin_ras_bbox(
   maxy double precision
 )
 RETURNS SETOF twin_ras_cells AS $$
-  SELECT c.*
-  FROM twin_ras_cells c
+  SELECT c.* FROM twin_ras_cells c
   WHERE c.plan_id = p_plan
     AND c.lon BETWEEN minx AND maxx
     AND c.lat BETWEEN miny AND maxy

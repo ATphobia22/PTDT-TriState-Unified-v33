@@ -1,8 +1,7 @@
--- PostGIS Raster performance tuning (PTDT flood / DEM tiles)
+-- PostGIS raster table + performance helpers
 
 CREATE EXTENSION IF NOT EXISTS postgis_raster;
 
--- Raster catalog for USGS/HEC-RAS depth grids
 CREATE TABLE IF NOT EXISTS twin_rasters (
   rid SERIAL PRIMARY KEY,
   plan_id TEXT,
@@ -11,23 +10,56 @@ CREATE TABLE IF NOT EXISTS twin_rasters (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Constraint enforce: scale, SRID, block size (optional after load)
--- SELECT AddRasterConstraints('twin_rasters','rast',TRUE,TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,TRUE,TRUE,TRUE,TRUE,TRUE);
-
--- Spatial index on raster footprint
 CREATE INDEX IF NOT EXISTS idx_twin_rasters_rast_gist
   ON twin_rasters USING GIST (ST_ConvexHull(rast))
   WITH (fillfactor = 90, buffering = on);
 
-CREATE INDEX IF NOT EXISTS idx_twin_rasters_plan
-  ON twin_rasters (plan_id);
+CREATE INDEX IF NOT EXISTS idx_twin_rasters_plan ON twin_rasters (plan_id);
 
--- Prefer in-db tiled rasters: 128x128 or 256x256 blocks at load time
--- Example load (run manually):
--- raster2pgsql -s 4326 -I -C -M -t 256x256 dem.tif public.twin_rasters | psql ...
+-- Sample depth at lon/lat for a plan (returns NULL if outside)
+CREATE OR REPLACE FUNCTION twin_raster_value(
+  p_plan text,
+  p_lon double precision,
+  p_lat double precision,
+  p_band int DEFAULT 1
+)
+RETURNS double precision AS $$
+  SELECT ST_Value(r.rast, p_band, ST_SetSRID(ST_MakePoint(p_lon, p_lat), 4326))
+  FROM twin_rasters r
+  WHERE r.plan_id = p_plan
+    AND ST_Intersects(r.rast, ST_SetSRID(ST_MakePoint(p_lon, p_lat), 4326))
+  LIMIT 1;
+$$ LANGUAGE sql STABLE;
 
--- Session-level hints for raster ops (apply in app connection or here as defaults via ALTER DATABASE if desired)
--- SET postgis.gdal_enabled_drivers = 'ENABLE_ALL';
--- SET postgis.enable_outdb_rasters = true;  -- only if using out-of-db GDAL files
+-- Clip raster to bbox (returns one raster; for export/preview)
+CREATE OR REPLACE FUNCTION twin_raster_clip_bbox(
+  p_plan text,
+  minx double precision,
+  miny double precision,
+  maxx double precision,
+  maxy double precision
+)
+RETURNS raster AS $$
+  SELECT ST_Clip(
+    r.rast,
+    ST_MakeEnvelope(minx, miny, maxx, maxy, 4326),
+    true
+  )
+  FROM twin_rasters r
+  WHERE r.plan_id = p_plan
+    AND ST_Intersects(r.rast, ST_MakeEnvelope(minx, miny, maxx, maxy, 4326))
+  LIMIT 1;
+$$ LANGUAGE sql STABLE;
+
+-- Summary stats for a plan band
+CREATE OR REPLACE FUNCTION twin_raster_summary(p_plan text, p_band int DEFAULT 1)
+RETURNS TABLE(min_val double precision, max_val double precision, mean_val double precision) AS $$
+  SELECT
+    (ST_SummaryStatsAgg(r.rast, p_band, true)).min,
+    (ST_SummaryStatsAgg(r.rast, p_band, true)).max,
+    (ST_SummaryStatsAgg(r.rast, p_band, true)).mean
+  FROM twin_rasters r
+  WHERE r.plan_id = p_plan;
+$$ LANGUAGE sql STABLE;
 
 ANALYZE twin_rasters;
