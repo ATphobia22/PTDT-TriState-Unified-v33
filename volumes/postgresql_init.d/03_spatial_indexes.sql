@@ -1,25 +1,26 @@
--- Optimized spatial + attribute indexes for twin workload
+-- Spatial indexes with GIST fillfactor tuning
+-- fillfactor 90: denser leaf pages (point data, read-heavy flood queries)
+-- buffering=on: reduce fragmentation on concurrent inserts
 
--- Point geometry (lon/lat) — primary spatial access path
-CREATE INDEX IF NOT EXISTS idx_twin_ras_cells_point
+DROP INDEX IF EXISTS idx_twin_ras_cells_point;
+CREATE INDEX idx_twin_ras_cells_point
   ON twin_ras_cells USING GIST (
     ST_SetSRID(ST_MakePoint(lon, lat), 4326)
-  );
+  )
+  WITH (fillfactor = 90, buffering = on);
 
--- Plan + depth for flood-stage filters and ranking
 CREATE INDEX IF NOT EXISTS idx_twin_ras_cells_plan_depth
   ON twin_ras_cells (plan_id, depth_m DESC NULLS LAST);
 
--- Partial index: only wet cells (skips dry noise in queries)
 CREATE INDEX IF NOT EXISTS idx_twin_ras_cells_wet
   ON twin_ras_cells (plan_id, depth_m)
   WHERE depth_m > 0;
 
--- Parcels GIST (already created in 02; ensure present)
-CREATE INDEX IF NOT EXISTS idx_twin_static_parcels_geom
-  ON twin_static_parcels USING GIST (geom);
+DROP INDEX IF EXISTS idx_twin_static_parcels_geom;
+CREATE INDEX idx_twin_static_parcels_geom
+  ON twin_static_parcels USING GIST (geom)
+  WITH (fillfactor = 90, buffering = on);
 
--- Expression index for metadata asset lookups
 CREATE INDEX IF NOT EXISTS idx_twin_static_parcels_asset
   ON twin_static_parcels ((metadata->>'ASSET_ID'));
 
