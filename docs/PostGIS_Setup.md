@@ -1,59 +1,32 @@
-# PostGIS Setup (PTDT)
+# PostGIS Setup
 
 ## Start
-
 ```powershell
 docker compose up -d
-```
-
-Wait until healthy:
-
-```powershell
-docker compose ps
-# or
 docker exec ptdt_postgis pg_isready -U ptdt -d ptdt
 ```
 
-## Connection
+Connection: `postgresql://ptdt:ptdt@127.0.0.1:8087/ptdt`
 
-| Key | Value |
-|-----|--------|
-| Host | 127.0.0.1 |
-| Port | 8087 |
-| Database | ptdt |
-| User | ptdt |
-| Password | ptdt |
+## Volumes
+| Host path | Container |
+|-----------|----------|
+| `volumes/postgresql_data` | `/var/lib/postgresql/data` |
+| `volumes/postgresql_init.d` | init scripts (ro) |
+| `volumes/gis_import` | `/gis_import` (ro) — drop shapefiles/GeoJSON here |
+| `volumes/backups` | `/backups` |
+| `volumes/qgis_projects` | QGIS projects |
 
-```
-postgresql://ptdt:ptdt@127.0.0.1:8087/ptdt
-```
+## Spatial indexes
+Init applies GIST on points + `(plan_id, depth_m)` btree. Helper: `twin_ras_bbox(...)`.
 
-## Tables
-
-- `twin_ras_cells` — HEC-RAS depth/WSE points (plan_id, lon, lat, depth_m, wse_m)
-- `twin_static_parcels` — local parcel geometries + metadata JSONB
-- MVT helper: `twin_ras_mvt(z, x, y, plan_id)`
-
-## Ingest HEC-RAS cells
-
-`POST http://127.0.0.1:<api>/api/engineering/ras-results`
-
-```json
-{
-  "plan_id": "01",
-  "cells": [
-    { "lon": -87.93, "lat": 38.13, "depth_m": 1.2, "wse_m": 112.4 }
-  ]
-}
-```
-
-Uses `middleware/ras-sync-router.js`.
-
-## Stop / reset
-
+## GDAL import
 ```powershell
-docker compose down
-# wipe data:
-docker compose down -v
-Remove-Item -Recurse -Force .\volumes\postgresql_data -ErrorAction SilentlyContinue
+# winget install OSGeo.GDAL
+.\scripts\gdal_import_postgis.ps1 .\volumes\gis_import\parcels.geojson
 ```
+or
+```bash
+./scripts/gdal_import_postgis.sh ./volumes/gis_import/parcels.shp
+```
+→ table `twin_static_parcels_import`

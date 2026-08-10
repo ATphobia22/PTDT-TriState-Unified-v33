@@ -10,18 +10,24 @@ services:
       - "8087:5432"
     volumes:
       - ./volumes/postgresql_data:/var/lib/postgresql/data
-      - ./volumes/postgresql_init.d:/docker-entrypoint-initdb.d
+      - ./volumes/postgresql_init.d:/docker-entrypoint-initdb.d:ro
+      - ./volumes/gis_import:/gis_import:ro
+      - ./volumes/backups:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ptdt -d ptdt"]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   qgis:
     image: kartoza/qgis-server:latest
     container_name: ptdt_qgis
     ports:
       - "8085:80"
+    volumes:
+      - ./volumes/qgis_projects:/projects:ro
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
