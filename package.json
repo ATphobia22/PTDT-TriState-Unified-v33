@@ -1,12 +1,13 @@
 {
   "name": "ptdt-tristate-unified-v33",
   "private": true,
-  "version": "33.0.0",
+  "version": "33.1.0",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "electron:dev": "vite build && electron .",
     "dist:win": "npm run build && electron-builder --win --x64",
     "preview": "vite preview"
@@ -22,7 +23,7 @@
   "devDependencies": {
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "@types/three": "^0.185.4",
+    "@types/three": "^0.170.0",
     "@vitejs/plugin-react": "^4.3.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
@@ -32,18 +33,11 @@
   "build": {
     "appId": "com.ptdt.unified.v33",
     "productName": "PTDT Unified V33",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
+    "directories": { "output": "release" },
+    "files": ["dist/**/*", "electron/**/*"],
     "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
+      "target": ["nsis", "portable"],
+      "arch": ["x64"],
       "signAndEditExecutable": false,
       "artifactName": "PTDT-Unified-V33-${version}-${arch}.${ext}"
     },
