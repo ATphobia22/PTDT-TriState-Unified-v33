@@ -1,13 +1,27 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as THREE from 'three';
-import { createDisplacedTerrain } from './cgi/TerrainDisplacement';
-import { stageVsBfe, compensatoryStorage, SITE } from './lib/elevationCheck';
+import { gradeFromFloodDepth } from './cgi/CinematicGrade';
+import { ForensicHUD } from './cgi/ForensicHUD';
+import { CinematicCameraController, BONEBANK_TRACKS } from './cgi/CinematicCamera';
+import { resolveWeather } from './cgi/WeatherStateMachine';
+import { createFloodWaterMaterial } from './cgi/FloodWaterMaterial';
+import { fetchWabashNewHarmony } from './services/usgsTelemetry';
+import { simplifiedBishopFoS, FEDERAL_FOS_THRESHOLD } from './services/bishopFoS';
 
 export default function App() {
   const mapRef = useRef<HTMLDivElement>(null);
   const threeRef = useRef<HTMLCanvasElement>(null);
+  const [hud, setHud] = useState({
+    stageFt: 0,
+    depthM: 0,
+    dischargeCfs: 0,
+    fos: 2.1,
+    station: '03378500',
+    timestamp: new Date().toISOString(),
+    alert: false,
+  });
 
   useEffect(() => {
     if (!mapRef.current || !threeRef.current) return;
@@ -23,9 +37,7 @@ export default function App() {
       maxPitch: 85,
     });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
-
     map.on('style.load', () => {
-      // @ts-expect-error setFog exists in maplibregl runtime but not in type definitions
       map.setFog({
         color: 'rgb(8, 18, 32)',
         'high-color': 'rgb(18, 36, 62)',
@@ -45,90 +57,100 @@ export default function App() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMappingExposure = 1.1;
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0a1628, 0.012);
-
     const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 2000);
     camera.position.set(0, 12, 28);
-    camera.lookAt(0, 0, 0);
+    const camCtrl = new CinematicCameraController(camera);
 
-    const terrain = createDisplacedTerrain({
-      heightUrl: '/tiles/posey_height_preview.png',
-      width: 80,
-      depth: 80,
-      segments: 256,
-      displacementScale: 42,
-      color: 0x1a2f1a,
-    });
+    // terrain
+    const terrainGeo = new THREE.PlaneGeometry(80, 80, 96, 96);
+    const tPos = terrainGeo.attributes.position;
+    for (let i = 0; i < tPos.count; i++) {
+      const x = tPos.getX(i);
+      const y = tPos.getY(i);
+      const h =
+        Math.sin(x * 0.08) * 1.8 +
+        Math.cos(y * 0.07) * 1.4 +
+        Math.sin((x + y) * 0.05) * 0.9 -
+        Math.exp(-((x * x + y * y) * 0.0015)) * 3.5;
+      tPos.setZ(i, h);
+    }
+    terrainGeo.computeVertexNormals();
+    const terrain = new THREE.Mesh(
+      terrainGeo,
+      new THREE.MeshStandardMaterial({ color: 0x1a2f1a, roughness: 0.85, metalness: 0.05 })
+    );
+    terrain.rotation.x = -Math.PI / 2;
+    terrain.position.y = -1.2;
     scene.add(terrain);
 
-    const waterGeo = new THREE.PlaneGeometry(70, 70, 160, 160);
-    const waterMat = new THREE.MeshPhysicalMaterial({
-      color: 0x0a6ea8,
-      transparent: true,
-      opacity: 0.62,
-      roughness: 0.08,
-      metalness: 0.25,
-      transmission: 0.35,
-      thickness: 1.2,
-      envMapIntensity: 1.4,
-    });
-    const water = new THREE.Mesh(waterGeo, waterMat);
+    const timeU = { value: 0 };
+    const waterMat = createFloodWaterMaterial(timeU);
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(70, 70, 128, 128), waterMat);
     water.rotation.x = -Math.PI / 2;
     water.position.y = 0.15;
     scene.add(water);
 
-    const sun = new THREE.DirectionalLight(0xfff4e0, 1.6);
-    sun.position.set(18, 32, 12);
-    scene.add(sun);
-    scene.add(new THREE.AmbientLight(0x2a3f55, 0.55));
-    scene.add(new THREE.HemisphereLight(0x87b5e0, 0x1a2a1a, 0.4));
+    scene.add(new THREE.DirectionalLight(0xfff4e0, 1.5).translateX(18).translateY(32).translateZ(12));
+    scene.add(new THREE.AmbientLight(0x2a3f55, 0.5));
+    scene.add(new THREE.HemisphereLight(0x87b5e0, 0x1a2a1a, 0.35));
 
-    const sprayCount = 400;
-    const sprayGeo = new THREE.BufferGeometry();
-    const sprayPos = new Float32Array(sprayCount * 3);
-    for (let i = 0; i < sprayCount; i++) {
-      sprayPos[i * 3] = (Math.random() - 0.5) * 50;
-      sprayPos[i * 3 + 1] = Math.random() * 2.5;
-      sprayPos[i * 3 + 2] = (Math.random() - 0.5) * 50;
-    }
-    sprayGeo.setAttribute('position', new THREE.BufferAttribute(sprayPos, 3));
-    const spray = new THREE.Points(
-      sprayGeo,
-      new THREE.PointsMaterial({ color: 0xb0e0ff, size: 0.08, transparent: true, opacity: 0.45 })
-    );
-    scene.add(spray);
+    let depthM = 0.5;
+    let trackIdx = 0;
+    camCtrl.play(BONEBANK_TRACKS[0]);
 
-    console.log('[PTDT] LAG check', stageVsBfe(SITE.lag_ft));
-    console.log('[PTDT] Berm check', stageVsBfe(SITE.berm_crest_ft));
-    console.log('[PTDT] Storage', compensatoryStorage(1000));
-
-    let t = 0;
-    const animate = () => {
-      t += 0.014;
-      const pos = waterGeo.attributes.position as THREE.BufferAttribute;
-      for (let i = 0; i < pos.count; i++) {
-        const x = pos.getX(i);
-        const y = pos.getY(i);
-        pos.setZ(i, Math.sin(x * 0.35 + t * 1.4) * 0.22 + Math.cos(y * 0.28 + t * 1.1) * 0.16 + Math.sin((x + y) * 0.2 + t * 1.9) * 0.09);
+    // USGS poll
+    const pollUsgs = async () => {
+      try {
+        const r = await fetchWabashNewHarmony();
+        // rough stage→depth proxy for local scene (NAV D88 relative)
+        depthM = Math.max(0, (r.stageFt - 15) * 0.15);
+        const fos = simplifiedBishopFoS({
+          cohesionKpa: 12,
+          frictionDeg: 28,
+          unitWeightKnM3: 18,
+          slopeHeightM: 4.5,
+          slopeAngleDeg: 32,
+          waterHeightM: depthM,
+        });
+        setHud({
+          stageFt: r.stageFt,
+          depthM,
+          dischargeCfs: r.dischargeCfs,
+          fos,
+          station: r.site,
+          timestamp: r.timestamp,
+          alert: fos < FEDERAL_FOS_THRESHOLD || depthM > 3,
+        });
+        const w = resolveWeather(depthM);
+        scene.fog = new THREE.FogExp2(0x0a1628, w.fogDensity);
+        waterMat.uniforms.uOpacity.value = w.waterOpacity;
+        const g = gradeFromFloodDepth(depthM);
+        renderer.toneMappingExposure = g.exposure;
+      } catch {
+        /* offline ok */
       }
-      pos.needsUpdate = true;
-      waterGeo.computeVertexNormals();
+    };
+    pollUsgs();
+    const usgsTimer = setInterval(pollUsgs, 15 * 60 * 1000);
 
-      const sp = sprayGeo.attributes.position as THREE.BufferAttribute;
-      for (let i = 0; i < sprayCount; i++) {
-        let py = sp.getY(i) + 0.008;
-        if (py > 2.8) py = 0.05;
-        sp.setY(i, py);
+    let last = performance.now();
+    const animate = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      timeU.value += dt;
+      camCtrl.update(dt);
+      if (!camCtrl['active'] && BONEBANK_TRACKS.length) {
+        trackIdx = (trackIdx + 1) % BONEBANK_TRACKS.length;
+        camCtrl.play(BONEBANK_TRACKS[trackIdx]);
       }
-      sp.needsUpdate = true;
-
+      waterMat.uniforms.uCameraPos.value.copy(camera.position);
       renderer.render(scene, camera);
       requestAnimationFrame(animate);
     };
-    animate();
+    requestAnimationFrame(animate);
 
     const onResize = () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -138,6 +160,7 @@ export default function App() {
     window.addEventListener('resize', onResize);
 
     return () => {
+      clearInterval(usgsTimer);
       window.removeEventListener('resize', onResize);
       map.remove();
       renderer.dispose();
@@ -147,10 +170,35 @@ export default function App() {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#0a1628' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-      <canvas ref={threeRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.85 }} />
-      <div style={{ position: 'absolute', top: 14, left: 14, right: 14, background: 'rgba(8,16,28,0.9)', color: '#e0f2fe', padding: '11px 16px', borderRadius: 11, fontSize: 14, backdropFilter: 'blur(14px)', border: '1px solid rgba(56,189,248,0.22)', fontFamily: 'system-ui,Segoe UI,sans-serif' }}>
-        PTDT Unified V33 — Virtual Tri-State River Valley · Posey DEM + Archimedes BFE 375.0 ft NAVD88
+      <canvas
+        ref={threeRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          mixBlendMode: 'screen',
+          opacity: 0.85,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          top: 14,
+          left: 14,
+          right: 14,
+          background: 'rgba(8,16,28,0.9)',
+          color: '#e0f2fe',
+          padding: '11px 16px',
+          borderRadius: 11,
+          fontSize: 14,
+          backdropFilter: 'blur(14px)',
+          border: '1px solid rgba(56,189,248,0.22)',
+          fontFamily: 'system-ui,Segoe UI,sans-serif',
+        }}
+      >
+        PTDT Unified V33 — Virtual Tri-State River Valley · Cinematic CGI
       </div>
+      <ForensicHUD {...hud} />
     </div>
   );
 }
