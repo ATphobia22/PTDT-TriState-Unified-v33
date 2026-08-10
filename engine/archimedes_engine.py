@@ -1,17 +1,21 @@
 # archimedes_engine.py
 # -*- coding: utf-8 -*-
-"""Archimedes hydrodynamic engine — CI-verified deterministic core for Point Township Section 35."""
+"""Deterministic regulatory elevation/storage core for Point Township Section 35."""
 from __future__ import annotations
 from typing import Dict, Union
 
 class ArchimedesEngine:
-    """Deterministic compensatory-storage + BFE engine (NAVD88)."""
+    """Regulatory/constraint authority only; not a river or groundwater solver."""
 
     def __init__(self) -> None:
         self.base_flood_elevation_ft: float = 375.0
         self.site_lag_ft: float = 377.2
         self.datum: str = "NAVD88"
         self.site: str = "13101 Bonebank Road, Section 35, T7S, R14W, Posey County, IN"
+
+    @staticmethod
+    def authority_domains() -> set[str]:
+        return {"REGULATORY"}
 
     def compensatory_storage_cy(
         self,
