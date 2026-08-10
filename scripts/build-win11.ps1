@@ -1,40 +1,53 @@
-# PTDT Unified V33 — full Windows 11 standalone build
-# Node 20+, Windows 10/11 x64, admin optional for NSIS shortcuts
-
+#==============================================================================
+# PTDT Unified V33 — Windows 11 production build
+# Prerequisites: Node.js 20+ LTS, Windows 10/11 x64
+# Optional: code-signing cert (CSC_LINK / CSC_KEY_PASSWORD)
+#==============================================================================
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-if (-not $Root) { $Root = (Get-Location).Path }
+$Root = if ($PSScriptRoot) {
+  (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} else { (Get-Location).Path }
 Set-Location $Root
 
-Write-Host "Root: $Root" -ForegroundColor DarkGray
-Write-Host "=== 1/4 npm install ===" -ForegroundColor Cyan
+function Step($n, $title) {
+  Write-Host ""
+  Write-Host "=== $n $title ===" -ForegroundColor Cyan
+}
+
+Step "1/5" "Environment"
+Write-Host "Root: $Root"
+node -v
+npm -v
+
+Step "2/5" "npm install"
 npm install
 if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
 
-Write-Host "=== 2/4 frontend build (tsc + vite) ===" -ForegroundColor Cyan
+Step "3/5" "Frontend (tsc + vite)"
 npm run build
-if ($LASTEXITCODE -ne 0) { throw "vite/tsc build failed" }
-
+if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
 if (-not (Test-Path ".\dist\index.html")) {
-  throw "dist/index.html missing — frontend build incomplete"
+  throw "Missing dist\index.html"
 }
 
-Write-Host "=== 3/4 electron-builder NSIS + portable ===" -ForegroundColor Cyan
-$env:CSC_IDENTITY_AUTO_DISCOVERY = "false"  # skip code-sign if no cert
-npx electron-builder --win --x64 --config.win.target=nsis,portable
+Step "4/5" "electron-builder (NSIS + portable x64)"
+# Skip auto code-sign when no cert present
+if (-not $env:CSC_LINK) { $env:CSC_IDENTITY_AUTO_DISCOVERY = "false" }
+npx electron-builder --win --x64
 if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
 
-Write-Host "=== 4/4 artifacts ===" -ForegroundColor Green
-$release = Join-Path $Root "release"
-if (Test-Path $release) {
-  Get-ChildItem $release -Filter "*.exe" | ForEach-Object {
-    Write-Host ("  {0:N1} MB  {1}" -f ($_.Length/1MB), $_.Name)
-  }
+Step "5/5" "Artifacts"
+$rel = Join-Path $Root "release"
+if (Test-Path $rel) {
+  Get-ChildItem $rel -File | Where-Object { $_.Extension -match '\.(exe|yml|yaml)$' } |
+    ForEach-Object {
+      Write-Host ("  {0,8:N1} MB  {1}" -f ($_.Length / 1MB), $_.Name)
+    }
 } else {
-  Write-Host "No release/ folder" -ForegroundColor Yellow
+  Write-Host "release/ not found" -ForegroundColor Yellow
 }
 
 Write-Host ""
-Write-Host "Portable:  PTDT-Unified-V33-Portable.exe" -ForegroundColor Green
-Write-Host "Installer: PTDT-Unified-V33-*-x64.exe" -ForegroundColor Green
-Write-Host "Optional: compile installer\TriRiverTwin_Win11.iss with Inno Setup" -ForegroundColor DarkGray
+Write-Host "Portable:  release\PTDT-Unified-V33-Portable.exe" -ForegroundColor Green
+Write-Host "Installer: release\PTDT-Unified-V33-*-x64.exe" -ForegroundColor Green
+Write-Host "Inno opt:  installer\TriRiverTwin_Win11.iss" -ForegroundColor DarkGray
