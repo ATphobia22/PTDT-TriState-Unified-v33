@@ -48,9 +48,11 @@ def test_hec_ras_rejects_wrong_datum():
 
 
 def test_missing_modflow_executable_fails_closed(tmp_path: Path):
-    result = Modflow6Runner("missing-modflow6").run(tmp_path, tmp_path / "model.nam", provenance())
+    nam = tmp_path / "model.nam"
+    nam.write_text("namefile")
+    result = Modflow6Runner("missing-modflow6").run(tmp_path, nam, provenance())
     assert result.status is ModelStatus.FAILED
-    assert result.failure_class is FailureClass.INPUT_INVALID
+    assert result.failure_class is FailureClass.EXECUTABLE_MISSING
 
 
 def test_modflow_process_failure(tmp_path: Path):
@@ -78,6 +80,7 @@ def test_modflow_valid_output_promotes(tmp_path: Path):
 
 
 def test_failed_modflow_cannot_promote():
-    result = ModelRunResult(ModelStatus.FAILED, FailureClass.PROCESS_ERROR, 1, "", "error", datetime.now(timezone.utc), datetime.now(timezone.utc), None, provenance())
+    now = datetime.now(timezone.utc)
+    result = ModelRunResult(ModelStatus.FAILED, FailureClass.PROCESS_ERROR, 1, "", "error", now, now, None, provenance())
     with pytest.raises(ValueError, match="not valid"):
         promote_groundwater_result(result, {(1, 1): 375.2})
