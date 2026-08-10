@@ -1,5 +1,4 @@
--- GIST optimization: fillfactor 90 + buffering for read-heavy point/parcel lookups.
--- Re-run ANALYZE after bulk HEC-RAS loads.
+-- Vector GIST: fillfactor 90, buffering on (read-heavy after batch RAS ingest)
 
 DROP INDEX IF EXISTS idx_twin_ras_cells_point;
 CREATE INDEX idx_twin_ras_cells_point
@@ -21,9 +20,6 @@ CREATE INDEX idx_twin_static_parcels_geom
 CREATE INDEX IF NOT EXISTS idx_twin_static_parcels_asset
   ON twin_static_parcels ((metadata->>'ASSET_ID'));
 
--- REINDEX after large imports if needed:
--- REINDEX INDEX CONCURRENTLY idx_twin_ras_cells_point;
-
 ANALYZE twin_ras_cells;
 ANALYZE twin_static_parcels;
 
@@ -40,4 +36,4 @@ RETURNS SETOF twin_ras_cells AS $$
     AND c.lon BETWEEN minx AND maxx
     AND c.lat BETWEEN miny AND maxy
     AND c.depth_m > 0;
-$$ LANGUAGE sql STABLE;
+$$ LANGUAGE sql STABLE PARALLEL SAFE;
