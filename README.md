@@ -1,19 +1,22 @@
 # PTDT-TriState-Unified-v33
 
-Cinematic digital twin — Natron-inspired grade + engineering coupling
+Cinematic digital twin + Windows 11 standalone
 
-## Windows .EXE
+## Windows build
+```powershell
+.\scripts\build-win11.ps1
+```
+or
+```cmd
+scripts\build-win11.cmd
+```
+→ `release/PTDT-Unified-V33-Portable.exe` + NSIS installer
+
+## HEC-RAS
 ```bash
-npm i && npm run dist:win
+pip install ras-commander h5py
+python python/hec_ras_bridge.py /path/to/ras/project 01
 ```
 
-## Cinematic
-- ACES-style grade + grain + fog modulation from flood depth
-- Forensic HUD (stage, Q, FoS, USGS station)
-- Weather state machine + flood water shader
-
-## Engineering
-- USGS 03378500 live telemetry
-- Simplified Bishop FoS (threshold 1.40)
-- HEC-RAS cell ingest + PostGIS
-- Local static parcel bootstrap
+## OpenColorIO / Natron ACES
+See `docs/OpenColorIO_Natron_ACES.md`
