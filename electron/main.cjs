@@ -36,7 +36,31 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow);
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on('update-available', (info) => {
+      console.log('[updater] available', info.version);
+    });
+    autoUpdater.on('update-downloaded', () => {
+      console.log('[updater] downloaded — will install on quit');
+    });
+    autoUpdater.on('error', (err) => {
+      console.warn('[updater]', err && err.message ? err.message : err);
+    });
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  } catch (e) {
+    console.warn('[updater] disabled', e && e.message ? e.message : e);
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow();
+  setupAutoUpdater();
+});
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
