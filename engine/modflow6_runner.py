@@ -23,11 +23,8 @@ class Modflow6Runner:
                 return self._failure(started, provenance, FailureClass.INPUT_INVALID, None, "", "workdir does not exist")
             if not namefile.exists():
                 return self._failure(started, provenance, FailureClass.INPUT_INVALID, None, "", f"missing namefile: {namefile}")
-            pre_mtimes = {p: p.stat().st_mtime_ns for p in self._output_paths(workdir)}
-            proc = subprocess.run(
-                [self.executable, namefile.name], cwd=workdir, capture_output=True, text=True,
-                timeout=self.timeout_seconds, check=False,
-            )
+            pre_mtimes = {p: p.stat().st_mtime_ns for p in self._output_paths(workdir) if p.exists()}
+            proc = subprocess.run([self.executable, namefile.name], cwd=workdir, capture_output=True, text=True, timeout=self.timeout_seconds, check=False)
         except FileNotFoundError:
             return self._failure(started, provenance, FailureClass.EXECUTABLE_MISSING, None, "", "MODFLOW6 executable not found")
         except subprocess.TimeoutExpired as exc:
@@ -42,26 +39,25 @@ class Modflow6Runner:
         if self._convergence_failed(stdout + "\n" + stderr):
             return ModelRunResult(ModelStatus.FAILED, FailureClass.CONVERGENCE_FAILURE, proc.returncode, stdout, stderr, started, finished, None, provenance, {"reason": "solver convergence indicator detected"})
 
-        ok, failure, diagnostics = self.validate_outputs(workdir, started)
+        ok, failure, diagnostics = self.validate_outputs(workdir, started, pre_mtimes)
         if not ok:
             return ModelRunResult(ModelStatus.FAILED, failure, proc.returncode, stdout, stderr, started, finished, None, provenance, diagnostics)
-        output_path = str(next((p for p in self._output_paths(workdir) if p.exists()), self._output_paths(workdir)[0]))
+        output_path = str(next(p for p in self._output_paths(workdir) if p.exists()))
         return ModelRunResult(ModelStatus.VALID, None, proc.returncode, stdout, stderr, started, finished, output_path, provenance, diagnostics)
 
-    def validate_outputs(self, workdir: Path, started_at_utc: datetime) -> tuple[bool, FailureClass | None, dict[str, Any]]:
+    def validate_outputs(self, workdir: Path, started_at_utc: datetime, pre_mtimes: dict[Path, int] | None = None) -> tuple[bool, FailureClass | None, dict[str, Any]]:
         paths = self._output_paths(workdir)
-        if not any(p.exists() for p in paths):
+        existing = [p for p in paths if p.exists()]
+        if not existing:
             return False, FailureClass.OUTPUT_MISSING, {"expected_outputs": [str(p) for p in paths]}
-        stale = [str(p) for p in paths if p.exists() and p.stat().st_mtime_ns < int(started_at_utc.timestamp() * 1_000_000_000)]
-        if stale and all(p.stat().st_mtime_ns < int(started_at_utc.timestamp() * 1_000_000_000) for p in paths if p.exists()):
-            return False, FailureClass.STALE_OUTPUT, {"stale_outputs": stale}
-        invalid = []
-        for p in paths:
-            if p.exists() and p.stat().st_size == 0:
-                invalid.append(str(p))
+        pre_mtimes = pre_mtimes or {}
+        unchanged = [str(p) for p in existing if p in pre_mtimes and p.stat().st_mtime_ns == pre_mtimes[p]]
+        if unchanged and len(unchanged) == len(existing):
+            return False, FailureClass.STALE_OUTPUT, {"stale_outputs": unchanged}
+        invalid = [str(p) for p in existing if p.stat().st_size == 0]
         if invalid:
             return False, FailureClass.OUTPUT_INVALID, {"empty_outputs": invalid}
-        return True, None, {"validated_outputs": [str(p) for p in paths if p.exists()]}
+        return True, None, {"validated_outputs": [str(p) for p in existing]}
 
     def _output_paths(self, workdir: Path) -> list[Path]:
         return [workdir / name for name in self.expected_outputs]
