@@ -11,6 +11,7 @@ class AuthorityDomain(str, Enum):
     RIVER_HYDRAULICS = "RIVER_HYDRAULICS"
     GROUNDWATER = "GROUNDWATER"
     ASSIMILATION = "ASSIMILATION"
+    SLOPE_STABILITY = "SLOPE_STABILITY"
     DERIVED_DISPLAY = "DERIVED_DISPLAY"
 
 
@@ -19,6 +20,7 @@ AUTHORITY_MATRIX = {
     "HEC-RAS": {AuthorityDomain.RIVER_HYDRAULICS},
     "MODFLOW6": {AuthorityDomain.GROUNDWATER},
     "EnKF": {AuthorityDomain.ASSIMILATION},
+    "Bishop": {AuthorityDomain.SLOPE_STABILITY},
     "PTDT": {AuthorityDomain.DERIVED_DISPLAY},
 }
 
@@ -36,4 +38,5 @@ def can_promote(status: ModelStatus, domain: AuthorityDomain) -> bool:
         AuthorityDomain.RIVER_HYDRAULICS,
         AuthorityDomain.GROUNDWATER,
         AuthorityDomain.ASSIMILATION,
+        AuthorityDomain.SLOPE_STABILITY,
     }
