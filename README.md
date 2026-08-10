@@ -8,7 +8,18 @@ Production Windows 11 cinematic digital twin — Point Township / Tri-County Riv
 - Berm crest 379.8 ft
 - Compensatory storage 1.20×
 
-## New modules (Aug 2026)
+## Model authority boundaries
+- `engine/archimedes_engine.py` — deterministic regulatory BFE/storage checks only
+- `engine/hec_ras_exchange.py` — validated HEC-RAS river-stage exchange boundary
+- `engine/modflow6_runner.py` — fail-closed MODFLOW6 execution boundary
+- `engine/modflow6_exchange.py` — controlled HEC-RAS → MODFLOW6 and groundwater promotion contract
+- `engine/authority.py` — explicit authority matrix and promotion rules
+- `engine/model_contracts.py` — status, failure, provenance, and exchange contracts
+- `docs/architecture/model-authority.md` — operator/developer authority and failure semantics
+
+Failed, missing, corrupt, stale, timed-out, or non-converged MODFLOW6 output is never promoted as current groundwater state. HEC-RAS publishes river hydraulics through an exchange contract; it does not mutate MODFLOW6 internals. Archimedes does not claim hydraulic or groundwater authority.
+
+## Existing visual modules (Aug 2026)
 - `src/cgi/TerrainDisplacement.ts` — Posey DEM heightmap displacement + fallback
 - `src/cgi/PostProcessing.ts` — optimized bloom / vignette / grain
 - `src/cgi/TriCountyCinematicScene.ts` — full cinematic scene controller
@@ -16,7 +27,12 @@ Production Windows 11 cinematic digital twin — Point Township / Tri-County Riv
 - `src/map/triCountyStyle.ts` — MapLibre Tri-County style
 - `src/map/FloodCustomLayer.ts` — Three.js flood custom layer
 - `src/map/VectorTileLayer.ts` — PMTiles / vector helpers
-- `engine/archimedes_engine.py` — Python regulatory core
+
+## Python engine tests
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
 
 ## Build .EXE
 ```bash
