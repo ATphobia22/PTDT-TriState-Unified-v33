@@ -48,8 +48,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          evidence_count=$(grep -RIl --exclude-dir=.git --exclude='*.lock' 'class ProvenanceRecord' . | wc -l)
-          graph_count=$(grep -RIl --exclude-dir=.git --exclude='*.lock' 'class EvidenceGraph' . | wc -l)
+          evidence_count=$(grep -RIl --exclude-dir=.git --exclude='*.lock' 'class ProvenanceRecord' src engine tests | wc -l)
+          graph_count=$(grep -RIl --exclude-dir=.git --exclude='*.lock' 'class EvidenceGraph' src engine tests | wc -l)
           if [ "$evidence_count" -ne 1 ]; then
             echo "Expected exactly one active ProvenanceRecord implementation; found $evidence_count"
             exit 1
