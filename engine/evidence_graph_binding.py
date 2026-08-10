@@ -1,15 +1,11 @@
-"""Adapter contract for publishing PTDT model exchanges to the authoritative Evidence Graph.
-
-The authoritative graph implementation lives in Tri-County-River-Valley-Digital-Twin.
-This module deliberately does not duplicate graph hashing or storage; it produces the
-field contract consumed by that repository's PTDTExchangeAdapter.
-"""
+"""Bridge PTDT model exchanges into the canonical Evidence Graph."""
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
 
-from .model_contracts import ExchangePayload
+from .model_contracts import ExchangePayload, ModelStatus
+from src.evidence.evidence_graph import EvidenceGraph, ProvenanceRecord
 
 
 def to_evidence_input(
@@ -23,7 +19,6 @@ def to_evidence_input(
     spatial_ref: str | None = None,
     vertical_datum: str | None = None,
 ) -> dict[str, Any]:
-    """Translate a valid PTDT exchange into the authoritative graph adapter schema."""
     if not source_record_id.strip():
         raise ValueError("source_record_id must be non-empty")
     if not role.strip() or not authority.strip():
@@ -47,22 +42,59 @@ def to_evidence_input(
 
 
 def enkf_evidence_input(exchange: ExchangePayload, *, source_record_id: str, parent_ids: Sequence[str] = (), **metadata: str | None) -> dict[str, Any]:
-    return to_evidence_input(
-        exchange,
-        source_record_id=source_record_id,
-        parent_ids=parent_ids,
-        role="derived-assimilation",
-        authority="derived",
-        **metadata,
-    )
+    return to_evidence_input(exchange, source_record_id=source_record_id, parent_ids=parent_ids, role="derived-assimilation", authority="derived", **metadata)
 
 
 def bishop_evidence_input(exchange: ExchangePayload, *, source_record_id: str, parent_ids: Sequence[str] = (), **metadata: str | None) -> dict[str, Any]:
-    return to_evidence_input(
+    return to_evidence_input(exchange, source_record_id=source_record_id, parent_ids=parent_ids, role="slope-stability", authority="slope-stability-model", **metadata)
+
+
+def publish_exchange(
+    exchange: ExchangePayload,
+    graph: EvidenceGraph,
+    *,
+    source_record_id: str,
+    parent_ids: Sequence[str] = (),
+    role: str,
+    authority: str,
+    observed_at: str | None = None,
+    spatial_ref: str | None = None,
+    vertical_datum: str | None = None,
+) -> ProvenanceRecord:
+    """Register a valid model result in the canonical graph.
+
+    Invalid/stale/failed model outputs cannot be promoted into the authoritative
+    derived-result path. Parent IDs are checked by EvidenceGraph.add_record().
+    """
+    if exchange.status is not ModelStatus.VALID:
+        raise ValueError(f"Only VALID model exchanges may be promoted: {exchange.status.value}")
+    data = to_evidence_input(
         exchange,
         source_record_id=source_record_id,
         parent_ids=parent_ids,
-        role="slope-stability",
-        authority="slope-stability-model",
-        **metadata,
+        role=role,
+        authority=authority,
+        observed_at=observed_at,
+        spatial_ref=spatial_ref,
+        vertical_datum=vertical_datum,
     )
+    record = ProvenanceRecord.create(
+        source=data["source"],
+        source_record_id=data["source_record_id"],
+        role=data["role"],
+        authority=data["authority"],
+        payload={
+            **data["payload"],
+            "status": data["status"],
+            "run_id": data["run_id"],
+            "scenario_id": data["scenario_id"],
+            "timestamp_utc": data["timestamp_utc"],
+        },
+        observed_at=data["observed_at"],
+        spatial_ref=data["spatial_ref"],
+        vertical_datum=data["vertical_datum"],
+        units=data["units"],
+        parent_ids=data["parent_ids"],
+    )
+    graph.add_record(record)
+    return record
