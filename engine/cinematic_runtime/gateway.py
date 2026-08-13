@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 
 from contextlib import asynccontextmanager
 
@@ -222,7 +223,7 @@ async def websocket_scene_state_stream(websocket: WebSocket) -> None:
                     sequence=0,
                     scene_state_version=snapshot.version,
                     frame_index=int(app.state.last_frame_index),
-                    timestamp_unix_ms=int(asyncio.get_running_loop().time() * 1000),
+                    timestamp_unix_ms=time.time_ns() // 1_000_000,
                     payload=manifest.model_dump(mode="json"),
                     state_cryptographic_seal=snapshot.seal,
                 )
