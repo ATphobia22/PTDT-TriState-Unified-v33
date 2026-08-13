@@ -177,21 +177,46 @@ class SpatialConnectionManager:
             sessions = list(self._sessions.values())
 
         for session in sessions:
-            try:
-                session.queue.put_nowait(local_message)
-            except asyncio.QueueFull:
-                try:
-                    session.queue.get_nowait()
-                    session.queue.task_done()
-                except asyncio.QueueEmpty:
-                    pass
-                try:
-                    session.queue.put_nowait(local_message)
-                except asyncio.QueueFull:
-                    pass
-                session.dropped_frames += 1
+            self._enqueue_latest(session, local_message)
 
         return local_message
+
+    async def send_to(self, websocket: Any, message: SceneStreamMessage) -> SceneStreamMessage:
+        """Deliver one state snapshot only to a requesting client."""
+
+        async with self._lock:
+            session = self._sessions.get(id(websocket))
+            if session is None:
+                raise RuntimeError("WebSocket is not registered.")
+            self._sequence += 1
+            local_message = message.model_copy(update={"sequence": self._sequence})
+            self._last_scene_state_version = max(
+                self._last_scene_state_version,
+                message.scene_state_version,
+            )
+
+        self._enqueue_latest(session, local_message)
+        return local_message
+
+    @staticmethod
+    def _enqueue_latest(session: _ClientSession, message: SceneStreamMessage) -> None:
+        try:
+            session.queue.put_nowait(message)
+            return
+        except asyncio.QueueFull:
+            pass
+
+        try:
+            session.queue.get_nowait()
+            session.queue.task_done()
+        except asyncio.QueueEmpty:
+            pass
+
+        try:
+            session.queue.put_nowait(message)
+        except asyncio.QueueFull:
+            pass
+        session.dropped_frames += 1
 
     async def prune_stale(self) -> int:
         """Disconnect clients that missed the heartbeat deadline."""
