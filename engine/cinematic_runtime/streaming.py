@@ -90,10 +90,15 @@ class SpatialConnectionManager:
 
         return len(self._sessions)
 
-    async def connect(self, websocket: Any) -> None:
+    async def connect(self, websocket: Any, *, subprotocol: str | None = None) -> None:
         """Accept and register a WebSocket client with a dedicated sender."""
 
-        await websocket.accept()
+        await websocket.accept(subprotocol=subprotocol)
+        await self.register_accepted(websocket)
+
+    async def register_accepted(self, websocket: Any) -> None:
+        """Register a WebSocket that has already completed the handshake."""
+
         queue: asyncio.Queue[SceneStreamMessage] = asyncio.Queue(maxsize=self._queue_size)
         sender_task = asyncio.create_task(
             self._sender_loop(websocket, queue),
