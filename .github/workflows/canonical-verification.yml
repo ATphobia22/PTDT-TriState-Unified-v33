@@ -12,6 +12,21 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      PTDT_REDIS_URL: redis://127.0.0.1:6379/0
+      PTDT_WS_SHARED_SECRET: ci-test-secret
+      PTDT_REQUIRE_REDIS: "true"
+      PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,9 +39,7 @@ jobs:
           python -m pip install usd-core
       - name: Compile Python modules
         run: python -m compileall -q engine src tests
-      - name: Evidence, scientific, cinematic runtime, and OpenUSD tests
-        env:
-          PYTHONPATH: .
+      - name: Evidence, scientific, cinematic runtime, Redis, and OpenUSD tests
         run: python -m pytest -q
       - name: Python dependency audit
         run: |
@@ -42,6 +55,8 @@ jobs:
           node-version: "22"
       - name: Install frontend dependencies
         run: npm install --package-lock=false --ignore-scripts --no-audit --no-fund
+      - name: Validate WebGPU runtime client syntax
+        run: node --check public/js/webgpu_runtime.js
       - name: Typecheck
         run: npm run typecheck
       - name: Build
