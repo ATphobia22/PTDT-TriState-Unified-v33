@@ -146,29 +146,24 @@ class SpatialConnectionManager:
     ) -> SceneStreamMessage:
         """Create and enqueue one state message without waiting on socket writes."""
 
-        async with self._lock:
-            self._sequence += 1
-            sequence = self._sequence
-
         message = SceneStreamMessage(
             event_id=event_id or uuid.uuid4().hex,
             origin_node_id=origin_node_id,
             schema_version=1,
-            sequence=sequence,
+            sequence=0,
             scene_state_version=scene_state_version,
             frame_index=frame_index,
             timestamp_unix_ms=int(time.time() * 1000),
             payload=payload,
             state_cryptographic_seal=state_cryptographic_seal,
         )
-        await self.broadcast_message(message)
-        return message
+        return await self.broadcast_message(message)
 
     async def broadcast_message(self, message: SceneStreamMessage) -> SceneStreamMessage:
         """Enqueue a prevalidated state message for all local clients."""
 
         async with self._lock:
-            self._sequence = max(self._sequence, message.sequence) + 1
+            self._sequence += 1
             local_message = message.model_copy(update={"sequence": self._sequence})
             self._last_scene_state_version = max(
                 self._last_scene_state_version,
