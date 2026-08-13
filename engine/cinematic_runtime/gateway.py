@@ -1,18 +1,23 @@
-"""FastAPI gateway for the PTDT cinematic runtime."""
+"""FastAPI gateway for the PTDT cinematic runtime and cluster stream."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from .manifest import RenderManifestBuilder, WebGPUBufferManifest
+from .redis_bus import DistributedRedisBus
 from .scene_state import AuthoritativeSceneState, EntityStateNode
 from .streaming import ClientProtocolMessage, SpatialConnectionManager
 
 MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
+DEFAULT_REDIS_URL = "redis://atphobia-redis-mesh:6379/0"
 
 
 class SceneEntityPayload(EntityStateNode):
@@ -35,28 +40,69 @@ class BroadcastResponse(BaseModel):
     sequence: int
     scene_state_version: int
     state_cryptographic_seal: str
+    distribution_event_id: str | None = None
 
 
 def _authorized_websocket(websocket: WebSocket) -> bool:
-    """Validate a shared secret when one is configured.
-
-    Production deployments should replace this boundary with the platform's
-    identity provider/JWT middleware. When no secret is configured, the
-    endpoint is intentionally unavailable rather than implicitly public.
-    """
+    """Validate a shared secret when one is configured."""
 
     expected = os.getenv("PTDT_WS_SHARED_SECRET")
     supplied = websocket.headers.get("x-ptdt-ws-secret")
     return bool(expected) and supplied == expected
 
 
+broadcaster = SpatialConnectionManager()
+scene_state = AuthoritativeSceneState()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start optional distributed transport and heartbeat maintenance."""
+
+    redis_url = os.getenv("PTDT_REDIS_URL")
+    require_redis = os.getenv("PTDT_REQUIRE_REDIS", "false").strip().lower() == "true"
+    redis_bus: DistributedRedisBus | None = None
+
+    if redis_url or require_redis:
+        redis_bus = DistributedRedisBus(
+            broadcaster,
+            redis_url=redis_url or DEFAULT_REDIS_URL,
+        )
+        try:
+            await redis_bus.start()
+        except Exception:
+            await redis_bus.stop()
+            if require_redis:
+                raise
+            redis_bus = None
+
+    prune_stop = asyncio.Event()
+
+    async def prune_loop() -> None:
+        while not prune_stop.is_set():
+            try:
+                await asyncio.wait_for(prune_stop.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                await broadcaster.prune_stale()
+
+    prune_task = asyncio.create_task(prune_loop(), name="ptdt-websocket-pruner")
+    app.state.redis_bus = redis_bus
+
+    try:
+        yield
+    finally:
+        prune_stop.set()
+        prune_task.cancel()
+        await asyncio.gather(prune_task, return_exceptions=True)
+        if redis_bus is not None:
+            await redis_bus.stop()
+
+
 app = FastAPI(
     title="PTDT Cinematic Runtime",
-    version="34.0.0",
+    version="34.1.0",
+    lifespan=lifespan,
 )
-
-scene_state = AuthoritativeSceneState()
-broadcaster = SpatialConnectionManager()
 
 
 @app.get(
@@ -78,11 +124,27 @@ async def generate_webgpu_manifest() -> WebGPUBufferManifest:
 async def execute_and_broadcast(
     payload: BroadcastFramePayload,
 ) -> BroadcastResponse:
-    """Commit entities atomically and enqueue the resulting state envelope."""
+    """Commit state and distribute it locally or through Redis."""
 
     scene_state.upsert_many(payload.entities)
     snapshot = scene_state.snapshot()
     manifest = RenderManifestBuilder.build(scene_state)
+    redis_bus: DistributedRedisBus | None = app.state.redis_bus
+
+    if redis_bus is not None:
+        event_id = await redis_bus.publish_state(
+            scene_state_version=snapshot.version,
+            frame_index=payload.frame_index,
+            payload=manifest.model_dump(mode="json"),
+            state_cryptographic_seal=snapshot.seal,
+        )
+        return BroadcastResponse(
+            status="FRAME_PROCESSED_CLUSTER_QUEUED",
+            sequence=0,
+            scene_state_version=snapshot.version,
+            state_cryptographic_seal=snapshot.seal,
+            distribution_event_id=event_id,
+        )
 
     message = await broadcaster.broadcast_state(
         scene_state_version=snapshot.version,
@@ -92,10 +154,11 @@ async def execute_and_broadcast(
     )
 
     return BroadcastResponse(
-        status="FRAME_PROCESSED",
+        status="FRAME_PROCESSED_LOCAL",
         sequence=message.sequence,
         scene_state_version=snapshot.version,
         state_cryptographic_seal=snapshot.seal,
+        distribution_event_id=message.event_id,
     )
 
 
@@ -116,16 +179,15 @@ async def websocket_scene_state_stream(websocket: WebSocket) -> None:
                 break
 
             message = ClientProtocolMessage.model_validate(raw_message)
+            await broadcaster.touch(websocket)
 
             if message.type in {"PING", "PONG", "ACK"}:
-                await broadcaster.touch(websocket)
                 await websocket.send_json(
                     {"type": "PONG", "sequence": message.sequence}
                 )
                 continue
 
             if message.type == "SUBSCRIBE":
-                await broadcaster.touch(websocket)
                 await websocket.send_json(
                     {
                         "type": "SUBSCRIBED",
