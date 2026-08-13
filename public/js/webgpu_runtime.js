@@ -9,6 +9,7 @@
 
 const DEFAULT_MAX_RECONNECT_DELAY_MS = 30_000;
 const DEFAULT_INITIAL_RECONNECT_DELAY_MS = 1_000;
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 15_000;
 const MATRIX_FLOAT_STRIDE = 16;
 const FLOAT32_BYTES = 4;
 const MAX_DRAW_CALLS = 100_000;
@@ -26,12 +27,17 @@ export class WebGPUSyncClient {
     this.sceneId = options.sceneId ?? "ptdt";
     this.viewportId = options.viewportId ?? "default";
     this.maxFps = Math.max(1, Math.min(120, options.maxFps ?? 30));
+    this.heartbeatIntervalMs = Math.max(
+      5_000,
+      options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
+    );
     this.maxReconnectDelayMs = Math.max(
       DEFAULT_INITIAL_RECONNECT_DELAY_MS,
       options.maxReconnectDelayMs ?? DEFAULT_MAX_RECONNECT_DELAY_MS,
     );
     this.socket = null;
     this.reconnectTimer = null;
+    this.heartbeatTimer = null;
     this.reconnectDelayMs = DEFAULT_INITIAL_RECONNECT_DELAY_MS;
     this.closedByUser = false;
     this.lastSequence = -1;
@@ -89,6 +95,7 @@ export class WebGPUSyncClient {
 
     this.socket.onopen = () => {
       this.reconnectDelayMs = DEFAULT_INITIAL_RECONNECT_DELAY_MS;
+      this.startHeartbeat();
       this.send({
         type: "SUBSCRIBE",
         scene_id: this.sceneId,
@@ -118,9 +125,27 @@ export class WebGPUSyncClient {
     };
 
     this.socket.onclose = () => {
+      this.stopHeartbeat();
       this.socket = null;
       this.scheduleReconnect();
     };
+  }
+
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      this.send({
+        type: "PING",
+        sequence: this.lastSequence >= 0 ? this.lastSequence : undefined,
+      });
+    }, this.heartbeatIntervalMs);
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 
   send(message) {
@@ -331,6 +356,7 @@ export class WebGPUSyncClient {
 
   close() {
     this.closedByUser = true;
+    this.stopHeartbeat();
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
