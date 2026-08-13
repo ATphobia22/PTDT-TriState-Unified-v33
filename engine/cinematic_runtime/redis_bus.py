@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import socket
+import time
 import uuid
 from typing import Any
 
@@ -83,7 +84,7 @@ class DistributedRedisBus:
             "schema_version": 1,
             "scene_state_version": scene_state_version,
             "frame_index": frame_index,
-            "timestamp_unix_ms": __import__("time").time_ns() // 1_000_000,
+            "timestamp_unix_ms": time.time_ns() // 1_000_000,
             "payload": payload,
             "state_cryptographic_seal": state_cryptographic_seal,
         }
