@@ -26,7 +26,6 @@ class FakeWebSocket:
         self.closed = True
 
 
-@pytest.mark.integration
 def test_live_redis_bus_round_trip() -> None:
     redis_url = os.getenv("PTDT_REDIS_URL")
     if not redis_url:
