@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .manifest import RenderManifestBuilder, WebGPUBufferManifest
 from .redis_bus import DistributedRedisBus
 from .scene_state import AuthoritativeSceneState, EntityStateNode
-from .streaming import ClientProtocolMessage, SpatialConnectionManager
+from .streaming import ClientProtocolMessage, SceneStreamMessage, SpatialConnectionManager
 
 MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
 DEFAULT_REDIS_URL = "redis://atphobia-redis-mesh:6379/0"
@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
     redis_url = os.getenv("PTDT_REDIS_URL")
     require_redis = os.getenv("PTDT_REQUIRE_REDIS", "false").strip().lower() == "true"
     redis_bus: DistributedRedisBus | None = None
+    app.state.last_frame_index = 0
 
     if redis_url or require_redis:
         redis_bus = DistributedRedisBus(
@@ -122,7 +123,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PTDT Cinematic Runtime",
-    version="34.1.0",
+    version="34.2.0",
     lifespan=lifespan,
 )
 
@@ -151,6 +152,7 @@ async def execute_and_broadcast(
     scene_state.upsert_many(payload.entities)
     snapshot = scene_state.snapshot()
     manifest = RenderManifestBuilder.build(scene_state)
+    app.state.last_frame_index = payload.frame_index
     redis_bus: DistributedRedisBus | None = app.state.redis_bus
 
     if redis_bus is not None:
@@ -209,6 +211,22 @@ async def websocket_scene_state_stream(websocket: WebSocket) -> None:
                 await websocket.send_json(
                     {"type": "PONG", "sequence": message.sequence}
                 )
+                continue
+
+            if message.type == "RESYNC":
+                snapshot = scene_state.snapshot()
+                manifest = RenderManifestBuilder.build(scene_state)
+                resync_message = SceneStreamMessage(
+                    origin_node_id=os.getenv("PTDT_NODE_ID", "local"),
+                    schema_version=manifest.schema_version,
+                    sequence=0,
+                    scene_state_version=snapshot.version,
+                    frame_index=int(app.state.last_frame_index),
+                    timestamp_unix_ms=int(asyncio.get_running_loop().time() * 1000),
+                    payload=manifest.model_dump(mode="json"),
+                    state_cryptographic_seal=snapshot.seal,
+                )
+                await broadcaster.send_to(websocket, resync_message)
                 continue
 
             if message.type == "SUBSCRIBE":
