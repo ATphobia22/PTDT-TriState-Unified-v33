@@ -18,6 +18,7 @@ from .streaming import ClientProtocolMessage, SpatialConnectionManager
 
 MAX_WEBSOCKET_MESSAGE_BYTES = 32 * 1024
 DEFAULT_REDIS_URL = "redis://atphobia-redis-mesh:6379/0"
+SUPPORTED_WS_PROTOCOL = "ptdt.v1"
 
 
 class SceneEntityPayload(EntityStateNode):
@@ -43,12 +44,33 @@ class BroadcastResponse(BaseModel):
     distribution_event_id: str | None = None
 
 
-def _authorized_websocket(websocket: WebSocket) -> bool:
-    """Validate a shared secret when one is configured."""
+def _websocket_protocols(websocket: WebSocket) -> list[str]:
+    """Return browser-provided WebSocket subprotocol tokens."""
+
+    header = websocket.headers.get("sec-websocket-protocol", "")
+    return [item.strip() for item in header.split(",") if item.strip()]
+
+
+def _authorized_websocket(websocket: WebSocket) -> tuple[bool, str | None]:
+    """Validate shared-secret auth for browser and non-browser clients."""
 
     expected = os.getenv("PTDT_WS_SHARED_SECRET")
-    supplied = websocket.headers.get("x-ptdt-ws-secret")
-    return bool(expected) and supplied == expected
+    if not expected:
+        return False, None
+
+    supplied_header = websocket.headers.get("x-ptdt-ws-secret")
+    if supplied_header == expected:
+        return True, SUPPORTED_WS_PROTOCOL
+
+    protocols = _websocket_protocols(websocket)
+    token_protocol = next(
+        (item for item in protocols if item.startswith("ptdt.token.")),
+        None,
+    )
+    if token_protocol is not None and token_protocol.removeprefix("ptdt.token.") == expected:
+        return True, SUPPORTED_WS_PROTOCOL
+
+    return False, None
 
 
 broadcaster = SpatialConnectionManager()
@@ -166,11 +188,13 @@ async def execute_and_broadcast(
 async def websocket_scene_state_stream(websocket: WebSocket) -> None:
     """Authenticate and stream versioned SceneState envelopes."""
 
-    if not _authorized_websocket(websocket):
+    authorized, selected_protocol = _authorized_websocket(websocket)
+    if not authorized:
         await websocket.close(code=1008, reason="Unauthorized")
         return
 
-    await broadcaster.connect(websocket)
+    await websocket.accept(subprotocol=selected_protocol)
+    await broadcaster.register_accepted(websocket)
     try:
         while True:
             raw_message = await websocket.receive_json()
