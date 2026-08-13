@@ -1,0 +1,12 @@
+{
+  "name": "com.ptdt.box3d-bridge",
+  "version": "0.1.0",
+  "displayName": "PTDT Box3D Runtime Bridge",
+  "description": "PTDT integration layer for ATphobia22/box3d-unity with authoritative SceneState synchronization, deterministic fixed-step simulation, and render-origin-safe transform exchange.",
+  "unity": "6000.0",
+  "license": "MIT",
+  "dependencies": {
+    "com.suvitruf.box3d": "https://github.com/ATphobia22/box3d-unity.git#9501a404d93c79bc6369d84c9b17e28aee780a37",
+    "com.unity.mathematics": "1.3.2"
+  }
+}
