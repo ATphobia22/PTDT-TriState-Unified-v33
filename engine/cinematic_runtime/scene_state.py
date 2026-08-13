@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -27,10 +28,7 @@ class EntityStateNode(BaseModel):
     def _validate_matrix(cls, value: tuple[float, ...]) -> tuple[float, ...]:
         if len(value) != 16:
             raise ValueError("local_transform_matrix must contain exactly 16 values.")
-        if not all(
-            isinstance(item, (int, float)) and float("-inf") < float(item) < float("inf")
-            for item in value
-        ):
+        if not all(isinstance(item, (int, float)) and math.isfinite(float(item)) for item in value):
             raise ValueError("local_transform_matrix values must be finite numbers.")
         return tuple(float(item) for item in value)
 
@@ -75,9 +73,17 @@ class AuthoritativeSceneState:
     def upsert(self, node: EntityStateNode) -> int:
         """Atomically update one entity and advance the state version."""
 
+        return self.upsert_many((node,))
+
+    def upsert_many(self, nodes: Iterable[EntityStateNode]) -> int:
+        """Atomically apply a batch and advance the state version once."""
+
+        validated_nodes = tuple(nodes)
         with self._lock:
-            self._registry[node.uuid] = node
-            self._version += 1
+            for node in validated_nodes:
+                self._registry[node.uuid] = node
+            if validated_nodes:
+                self._version += 1
             return self._version
 
     def remove(self, uuid: str) -> int:
