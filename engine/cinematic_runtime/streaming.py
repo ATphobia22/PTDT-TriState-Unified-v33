@@ -1,10 +1,11 @@
-"""Bounded WebSocket streaming and optional Redis Streams transport."""
+"""Bounded WebSocket streaming and distributed SceneState transport primitives."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,11 +30,13 @@ class ClientProtocolMessage(BaseModel):
 
 
 class SceneStreamMessage(BaseModel):
-    """Server-to-client state envelope."""
+    """Versioned server-to-client state envelope."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: str = "SCENE_STATE"
+    event_id: str = Field(default_factory=lambda: uuid.uuid4().hex, min_length=16, max_length=64)
+    origin_node_id: str = Field(default="local", min_length=1, max_length=128)
     schema_version: int = Field(ge=1)
     sequence: int = Field(ge=0)
     scene_state_version: int = Field(ge=0)
@@ -41,6 +44,14 @@ class SceneStreamMessage(BaseModel):
     timestamp_unix_ms: int = Field(ge=0)
     payload: dict[str, Any]
     state_cryptographic_seal: str = Field(min_length=64, max_length=64)
+
+    @field_validator("state_cryptographic_seal")
+    @classmethod
+    def _validate_seal(cls, value: str) -> str:
+        normalized = value.lower()
+        if any(character not in "0123456789abcdef" for character in normalized):
+            raise ValueError("state_cryptographic_seal must be lowercase hexadecimal SHA-256.")
+        return normalized
 
 
 @dataclass
@@ -71,6 +82,13 @@ class SpatialConnectionManager:
         self._sessions: dict[int, _ClientSession] = {}
         self._lock = asyncio.Lock()
         self._sequence = 0
+        self._last_scene_state_version = 0
+
+    @property
+    def active_connection_count(self) -> int:
+        """Return the number of locally connected clients."""
+
+        return len(self._sessions)
 
     async def connect(self, websocket: Any) -> None:
         """Accept and register a WebSocket client with a dedicated sender."""
@@ -123,15 +141,18 @@ class SpatialConnectionManager:
         frame_index: int,
         payload: dict[str, Any],
         state_cryptographic_seal: str,
+        origin_node_id: str = "local",
+        event_id: str | None = None,
     ) -> SceneStreamMessage:
-        """Enqueue one state message without waiting on socket writes."""
+        """Create and enqueue one state message without waiting on socket writes."""
 
         async with self._lock:
             self._sequence += 1
             sequence = self._sequence
-            sessions = list(self._sessions.values())
 
         message = SceneStreamMessage(
+            event_id=event_id or uuid.uuid4().hex,
+            origin_node_id=origin_node_id,
             schema_version=1,
             sequence=sequence,
             scene_state_version=scene_state_version,
@@ -140,10 +161,24 @@ class SpatialConnectionManager:
             payload=payload,
             state_cryptographic_seal=state_cryptographic_seal,
         )
+        await self.broadcast_message(message)
+        return message
+
+    async def broadcast_message(self, message: SceneStreamMessage) -> SceneStreamMessage:
+        """Enqueue a prevalidated state message for all local clients."""
+
+        async with self._lock:
+            self._sequence = max(self._sequence, message.sequence) + 1
+            local_message = message.model_copy(update={"sequence": self._sequence})
+            self._last_scene_state_version = max(
+                self._last_scene_state_version,
+                message.scene_state_version,
+            )
+            sessions = list(self._sessions.values())
 
         for session in sessions:
             try:
-                session.queue.put_nowait(message)
+                session.queue.put_nowait(local_message)
             except asyncio.QueueFull:
                 try:
                     session.queue.get_nowait()
@@ -151,12 +186,12 @@ class SpatialConnectionManager:
                 except asyncio.QueueEmpty:
                     pass
                 try:
-                    session.queue.put_nowait(message)
-                    session.dropped_frames += 1
+                    session.queue.put_nowait(local_message)
                 except asyncio.QueueFull:
-                    session.dropped_frames += 1
+                    pass
+                session.dropped_frames += 1
 
-        return message
+        return local_message
 
     async def prune_stale(self) -> int:
         """Disconnect clients that missed the heartbeat deadline."""
@@ -190,7 +225,7 @@ class SpatialConnectionManager:
 
 
 class RedisStateStream:
-    """Redis Streams adapter for ordered cross-node state distribution."""
+    """Redis Streams adapter retained for direct ordered stream consumers."""
 
     def __init__(
         self,
