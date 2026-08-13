@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 from engine.cinematic_runtime.gateway import _authorized_websocket
 from engine.cinematic_runtime.redis_bus import DistributedRedisBus
