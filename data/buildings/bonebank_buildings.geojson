@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "name": "bonebank_buildings",
+  "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+  "features": [],
+  "properties": {
+    "status": "PLACEHOLDER_EMPTY",
+    "instruction": "Replace with sealed local footprints (survey/OSM/Microsoft/Overture cascade). Empty collection is intentional fail-closed — do not invent building polygons."
+  }
+}
