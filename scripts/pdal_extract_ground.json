@@ -1,0 +1,28 @@
+{
+  "pipeline": [
+    {
+      "type": "readers.las",
+      "filename": "./input_pointclouds/posey_county_raw.laz"
+    },
+    {
+      "type": "filters.smrf",
+      "scalar": 1.2,
+      "slope": 0.2,
+      "threshold": 0.5,
+      "window": 16.0
+    },
+    {
+      "type": "filters.range",
+      "limits": "Classification[2:2]"
+    },
+    {
+      "type": "writers.gdal",
+      "filename": "./raw_dem/posey_ground_surface.tif",
+      "gdaldriver": "GTiff",
+      "output_type": "idw",
+      "resolution": 1.0,
+      "data_type": "float32",
+      "nodata": -9999
+    }
+  ]
+}
