@@ -1,0 +1,54 @@
+{
+  "type": "FeatureCollection",
+  "name": "bonebank_buildings",
+  "crs": {
+    "type": "name",
+    "properties": { "name": "urn:ogc:def:crs:EPSG::2966" }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "bldg_residence_01",
+        "type": "residential",
+        "FFE_NAVD88_ft": 382.5,
+        "LAG_NAVD88_ft": 377.2,
+        "source": "Local Survey (verify against field survey before LOMA)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [905100.5, 345200.1],
+            [905120.5, 345200.1],
+            [905120.5, 345180.1],
+            [905100.5, 345180.1],
+            [905100.5, 345200.1]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "bldg_barn_01",
+        "type": "agricultural",
+        "FFE_NAVD88_ft": 378.0,
+        "LAG_NAVD88_ft": 376.5,
+        "source": "Local Survey (verify against field survey before LOMA)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [905150.0, 345250.0],
+            [905180.0, 345250.0],
+            [905180.0, 345220.0],
+            [905150.0, 345220.0],
+            [905150.0, 345250.0]
+          ]
+        ]
+      }
+    }
+  ]
+}
