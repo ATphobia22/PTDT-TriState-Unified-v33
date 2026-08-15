@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from engine.cinematic_runtime.streaming import SceneStreamMessage, SpatialConnectionManager
 
@@ -12,9 +13,11 @@ class FakeWebSocket:
         self.accepted = False
         self.messages: list[dict] = []
         self.closed = False
+        self.subprotocol: str | None = None
 
-    async def accept(self) -> None:
+    async def accept(self, *args: Any, subprotocol: str | None = None, **kwargs: Any) -> None:
         self.accepted = True
+        self.subprotocol = subprotocol
 
     async def send_json(self, payload: dict) -> None:
         self.messages.append(payload)
