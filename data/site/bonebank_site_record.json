@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "address": "13101 Bonebank Road, Mount Vernon, IN 47620",
+  "county_cid": "180209",
+  "city_cid": "180389",
+  "apn_status": "UNVERIFIED_DUAL",
+  "apn_candidates": [
+    "65-09-35-200-001.000-009",
+    "65-19-08-100-008.001-010"
+  ],
+  "plss_status": "UNVERIFIED_DUAL",
+  "plss_candidates": [
+    "Sec 35 T7S R14W",
+    "PT NE NE 8-8-14"
+  ],
+  "firm_panel_status": "QUERY_NFHL_AT_STRUCTURE",
+  "bfe_ft_navd88": 375.0,
+  "lag_ft_navd88": 377.2,
+  "ffe_ft_navd88": 382.5,
+  "elevation_source": "internal_material_truth_pending_sealed_survey",
+  "vertical_datum": "NAVD88",
+  "loma_filing_blocked": true,
+  "loma_block_reasons": [
+    "APN dual-ID unresolved — reconcile Posey XSoft Engage + recorded deed",
+    "PLSS dual description unresolved",
+    "LAG/FFE require sealed elevation certificate before LOMA package"
+  ],
+  "gage_primary": "03378500"
+}

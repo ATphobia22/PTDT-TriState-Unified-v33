@@ -2,9 +2,11 @@
  * WebGPU compute pass for deriving a binary flood mask from a canonical
  * hydraulic depth raster. The source depth remains authoritative upstream.
  *
- * The pass is intentionally deterministic and fail-closed for NaN/Inf depth.
- * Dilation is Chebyshev in raster cells; keep radius small on large grids.
+ * Fail-closed for non-finite depth. WGSL has no isNan/isInf builtins
+ * (removed from the language); use IEEE inequality + magnitude guard.
  */
+
+/// <reference types="@webgpu/types" />
 
 export const FLOOD_DEPTH_COMPUTE_WGSL = /* wgsl */ `
 struct Params {
@@ -23,8 +25,9 @@ var dstMask: texture_storage_2d<r32float, write>;
 @group(0) @binding(2)
 var<uniform> params: Params;
 
+// Portable finite check: NaN != NaN; reject extreme magnitudes
 fn validDepth(value: f32) -> bool {
-  return !isNan(value) && !isInf(value);
+  return (value == value) && (abs(value) < 1e30);
 }
 
 @compute @workgroup_size(8, 8, 1)

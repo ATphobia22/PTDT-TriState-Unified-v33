@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_version": 1,
+  "spatial_layer_metadata": {
+    "horizontal_crs": "EPSG:2966",
+    "source_coordinate_crs": "EPSG:4326",
+    "vertical_datum": "NAVD88",
+    "horizontal_units": "US_survey_foot",
+    "vertical_units": "US_survey_foot",
+    "mesh_format": "glTF_2.0",
+    "texture_color_space": "ACEScg",
+    "authority": "PTDT cinematic runtime asset registry"
+  },
+  "building_tiles": [
+    {
+      "tile_id": "tile_37n88w_b13101",
+      "display_label": "Bonebank Road Corridor Building 13101",
+      "address_provenance": {
+        "value": "13101 Bonebank Road, Point Township, IN 47620",
+        "authoritative": false,
+        "source_ref": null,
+        "note": "Display/prototype metadata only until linked to the authoritative PTDT building evidence registry."
+      },
+      "bounding_box_wgs84": {
+        "min_lon": -88.015,
+        "min_lat": 37.892,
+        "max_lon": -88.012,
+        "max_lat": 37.895
+      },
+      "geometry_specification": {
+        "lod_3_mesh_url": "/assets/models/buildings/bonebank_13101_high_res.gltf",
+        "lod_1_box_url": "/assets/models/buildings/bonebank_13101_primitive.gltf",
+        "poly_vertex_count": 48250,
+        "texture_resolution": "4K_PBR"
+      },
+      "elevation_references": {
+        "lowest_adjacent_grade_ft": 377.2,
+        "base_flood_elevation_ft": 375.0,
+        "vertical_datum": "NAVD88",
+        "authoritative": false,
+        "source_ref": null,
+        "note": "Engineering reference values supplied for runtime integration; they do not constitute a regulatory determination."
+      }
+    },
+    {
+      "tile_id": "tile_37n88w_b13102",
+      "display_label": "Bonebank Road Corridor Building 13102",
+      "address_provenance": {
+        "value": "13102 Bonebank Road, Point Township, IN 47620",
+        "authoritative": false,
+        "source_ref": null,
+        "note": "Display/prototype metadata only until linked to the authoritative PTDT building evidence registry."
+      },
+      "bounding_box_wgs84": {
+        "min_lon": -88.011,
+        "min_lat": 37.892,
+        "max_lon": -88.008,
+        "max_lat": 37.895
+      },
+      "geometry_specification": {
+        "lod_3_mesh_url": "/assets/models/buildings/bonebank_13102_high_res.gltf",
+        "lod_1_box_url": "/assets/models/buildings/bonebank_13102_primitive.gltf",
+        "poly_vertex_count": 31120,
+        "texture_resolution": "4K_PBR"
+      },
+      "elevation_references": {
+        "lowest_adjacent_grade_ft": 378.1,
+        "base_flood_elevation_ft": 375.0,
+        "vertical_datum": "NAVD88",
+        "authoritative": false,
+        "source_ref": null,
+        "note": "Engineering reference values supplied for runtime integration; they do not constitute a regulatory determination."
+      }
+    }
+  ]
+}

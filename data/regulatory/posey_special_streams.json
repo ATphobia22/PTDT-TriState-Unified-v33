@@ -1,0 +1,31 @@
+{
+  "source": "IDNR Appendix E.4 Special Streams + NRC Navigable Waters Roster by County",
+  "county": "Posey",
+  "fips": "18129",
+  "special_streams_excerpt": [
+    {
+      "name": "Black River",
+      "county": "Posey",
+      "extent": "From confluence with Higginbotham Ditch to confluence with the Wabash River"
+    },
+    {
+      "name": "Cypress Slough",
+      "county": "Posey",
+      "extent": "From confluence with Castlebury Creek to the Southwind Maritime Center"
+    },
+    {
+      "name": "Wabash River",
+      "counties_include": ["Posey"],
+      "extent": "Indiana-Ohio state line to confluence with the Ohio River"
+    }
+  ],
+  "navigable_roster_posey": [
+    { "name": "Big Creek", "note": "Navigable from junction with Wabash River 25.4 river miles" },
+    { "name": "Harris Ditch", "note": "Navigable from junction with Ohio River 0.9 river miles" },
+    { "name": "Little Fork of Big Creek", "note": "Navigable from junction with Big Creek 5.1 river miles" },
+    { "name": "McFadden Creek", "note": "Navigable from junction with Ohio River 2.3 river miles" },
+    { "name": "Ohio River", "note": "Navigable throughout the county" },
+    { "name": "Wabash River", "note": "Navigable from junction with Ohio River throughout the county" }
+  ],
+  "disclaimer": "Awareness overlay only. Flood Control Act / permit determinations require IDNR Division of Water."
+}
