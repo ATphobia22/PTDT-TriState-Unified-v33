@@ -3,26 +3,25 @@ PTDT server-side XSoft Engage HTML proxy.
 
 Canonical Posey URL (verified):
   https://engage.xsoftinc.com/posey/map/getparceldetail?parcelId={APN}
-
-Returns typed JSON. Soft-fail on network/parse errors.
-Not regulatory authority — assessor data is presentation / reconcile aid only.
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("PTDT.XSoftProxy")
 
 router = APIRouter(prefix="/api/proxy/xsoft", tags=["xsoft-proxy"])
 
-POSEY_DETAIL_URL = (
-    "https://engage.xsoftinc.com/posey/map/getparceldetail"
-)
-# Forbidden: https://xsoftinc.com?parcelId=...
+POSEY_DETAIL_URL = "https://engage.xsoftinc.com/posey/map/getparceldetail"
 USER_AGENT = "PTDT-TriState-DigitalTwin/3.3 (+local-proxy; assessor-reconcile)"
+MAX_BODY_BYTES = 2_000_000
+REQUEST_TIMEOUT = httpx.Timeout(20.0, connect=8.0)
 
 
 class XSoftParsedParcel(BaseModel):
@@ -59,7 +58,6 @@ def _money(s: str) -> Optional[float]:
 
 
 def parse_engage_html(html: str, parcel_id: str, source_url: str) -> XSoftParsedParcel:
-    """Best-effort parse of Engage DetailPage text/HTML."""
     text = re.sub(r"<[^>]+>", " ", html)
     text = re.sub(r"\s+", " ", text)
 
@@ -84,7 +82,6 @@ def parse_engage_html(html: str, parcel_id: str, source_url: str) -> XSoftParsed
         except ValueError:
             pass
 
-    # Latest valuation row: year + Total Land + Total Improv + Total Value
     land_v = imp_v = tot_v = None
     year_v: Optional[int] = None
     m_val = re.search(
@@ -99,33 +96,30 @@ def parse_engage_html(html: str, parcel_id: str, source_url: str) -> XSoftParsed
         tot_v = _money(m_val.group(4))
 
     sales: list[dict[str, Any]] = []
-    for sm in re.finditer(
-        r"(\d{2}/\d{2}/\d{4})\s+\$([0-9,.]+)",
-        text,
-    ):
+    for sm in re.finditer(r"(\d{2}/\d{2}/\d{4})\s+\$([0-9,.]+)", text):
         sales.append({"sale_date": sm.group(1), "sale_price": _money(sm.group(2))})
 
     data_as_of = grab(r"Data current as of:\s*([0-9-]+)")
 
-    city = state = zip_code = None
-    if addr:
-        # Heuristic: last lines often CITY / ST / ZIP in original HTML
-        parts = [p.strip() for p in re.split(r"\s{2,}", addr) if p.strip()]
-        if len(parts) >= 1:
-            # Keep first line as street when multi-line collapsed
-            pass
-
+    city = state = zip_code = street = None
     m_csz = re.search(
         r"Property Address:\s*(.+?)\s+([A-Z][A-Z\s]+?)\s+(IN)\s+(\d{5})",
         text,
         re.IGNORECASE,
     )
-    street = None
     if m_csz:
         street = m_csz.group(1).strip()
         city = m_csz.group(2).strip()
         state = m_csz.group(3).upper()
         zip_code = m_csz.group(4)
+
+    if "Parcel Number" not in text and "Parcel Identification" not in text:
+        return XSoftParsedParcel(
+            status="SOFT_FAIL",
+            parcel_id=parcel_id,
+            source_url=source_url,
+            reason="response missing Engage parcel markers",
+        )
 
     return XSoftParsedParcel(
         status="OK",
@@ -157,9 +151,21 @@ async def proxy_posey_parcel(
     parcel_id: str = Query(..., min_length=5, max_length=64),
 ) -> XSoftParsedParcel:
     pid = parcel_id.strip()
+    if not re.match(r"^[0-9A-Za-z.\-]+$", pid):
+        return XSoftParsedParcel(
+            status="SOFT_FAIL",
+            parcel_id=pid,
+            source_url="",
+            reason="invalid parcel_id charset",
+        )
+
     url = f"{POSEY_DETAIL_URL}?parcelId={pid}"
     try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=REQUEST_TIMEOUT,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+        ) as client:
             resp = await client.get(
                 url,
                 headers={
@@ -167,7 +173,16 @@ async def proxy_posey_parcel(
                     "Accept": "text/html,application/xhtml+xml",
                 },
             )
+    except httpx.TimeoutException:
+        logger.warning("XSoft timeout parcel_id=%s", pid)
+        return XSoftParsedParcel(
+            status="SOFT_FAIL",
+            parcel_id=pid,
+            source_url=url,
+            reason="timeout contacting Engage",
+        )
     except httpx.HTTPError as exc:
+        logger.warning("XSoft network error parcel_id=%s err=%s", pid, exc)
         return XSoftParsedParcel(
             status="SOFT_FAIL",
             parcel_id=pid,
@@ -175,6 +190,13 @@ async def proxy_posey_parcel(
             reason=f"network: {exc}",
         )
 
+    if resp.status_code >= 500:
+        return XSoftParsedParcel(
+            status="SOFT_FAIL",
+            parcel_id=pid,
+            source_url=url,
+            reason=f"upstream 5xx HTTP {resp.status_code}",
+        )
     if resp.status_code != 200:
         return XSoftParsedParcel(
             status="SOFT_FAIL",
@@ -183,9 +205,19 @@ async def proxy_posey_parcel(
             reason=f"HTTP {resp.status_code}",
         )
 
+    body = resp.text
+    if len(body.encode("utf-8", errors="ignore")) > MAX_BODY_BYTES:
+        return XSoftParsedParcel(
+            status="SOFT_FAIL",
+            parcel_id=pid,
+            source_url=url,
+            reason="response body too large",
+        )
+
     try:
-        return parse_engage_html(resp.text, pid, url)
-    except Exception as exc:  # noqa: BLE001 — soft-fail boundary
+        return parse_engage_html(body, pid, url)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("XSoft parse failure parcel_id=%s", pid)
         return XSoftParsedParcel(
             status="SOFT_FAIL",
             parcel_id=pid,
@@ -195,5 +227,4 @@ async def proxy_posey_parcel(
 
 
 def mount_xsoft_proxy(app: Any) -> None:
-    """Call from FastAPI app factory: mount_xsoft_proxy(app)"""
     app.include_router(router)
