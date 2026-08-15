@@ -92,7 +92,8 @@ export class HecRasDepthPipeline {
   }
 
   public uploadWseMm(wseMm: Int32Array): void {
-    const byteLength = wseMm.byteLength;
+    const copy = new Int32Array(wseMm);
+    const byteLength = copy.byteLength;
     if (!this.wseBuffer || this.wseBuffer.size < byteLength) {
       this.wseBuffer?.destroy();
       this.wseBuffer = this.device.createBuffer({
@@ -100,7 +101,7 @@ export class HecRasDepthPipeline {
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
     }
-    this.device.queue.writeBuffer(this.wseBuffer, 0, wseMm);
+    this.device.queue.writeBuffer(this.wseBuffer, 0, copy.buffer, copy.byteOffset, copy.byteLength);
   }
 
   private initDepthOutTexture(): void {
