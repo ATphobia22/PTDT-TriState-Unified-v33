@@ -1,8 +1,8 @@
 /**
  * IndianaMap FeatureServer parcel queries with pagination.
  * maxRecordCount on Hosted services is typically 2000.
- * Use resultOffset + resultRecordCount until exceededTransferLimit is false.
  */
+import type { Map as MaplibreMap, GeoJSONSource } from "maplibre-gl";
 
 export const INDIANA_PARCELS_2025 =
   "https://gisdata.in.gov/server/rest/services/Hosted/Parcel_Boundaries_of_Indiana_2025/FeatureServer/0";
@@ -10,9 +10,8 @@ export const INDIANA_PARCELS_2025 =
 export const INDIANA_PARCELS_CURRENT =
   "https://gisdata.in.gov/server/rest/services/Hosted/Parcel_Boundaries_of_Indiana_Current/FeatureServer/0";
 
-/** IndianaMap documented page size for these Hosted layers */
 export const FEATURESERVER_PAGE_SIZE = 2000;
-export const FEATURESERVER_MAX_PAGES = 25; // hard cap ~50k features
+export const FEATURESERVER_MAX_PAGES = 25;
 
 export type Bbox4326 = {
   xmin: number;
@@ -107,21 +106,14 @@ export async function queryIndianaParcelsGeoJson(
 
 /** Attach paginated IndianaMap parcels to a MapLibre map instance. */
 export async function loadIndianaParcelsIntoMap(
-  map: {
-    getSource: (id: string) => unknown;
-    addSource: (id: string, src: object) => void;
-    addLayer: (layer: object) => void;
-    getLayer: (id: string) => unknown;
-  },
+  map: MaplibreMap,
   bbox: Bbox4326 = BONEBANK_BBOX,
 ): Promise<number> {
   const fc = await queryIndianaParcelsGeoJson(bbox);
-  const existing = map.getSource(PARCEL_SOURCE_ID) as
-    | { setData?: (d: GeoJSON.FeatureCollection) => void }
-    | undefined;
-  if (existing?.setData) {
+  const existing = map.getSource(PARCEL_SOURCE_ID) as GeoJSONSource | undefined;
+  if (existing && typeof existing.setData === "function") {
     existing.setData(fc);
-  } else {
+  } else if (!map.getSource(PARCEL_SOURCE_ID)) {
     map.addSource(PARCEL_SOURCE_ID, { type: "geojson", data: fc });
   }
   if (!map.getLayer(PARCEL_FILL_LAYER)) {
