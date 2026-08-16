@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+build/certs/
+*.key
+*.pem
+*.p12
+build/FEMA_HMA_APPEAL_DOSSIER_*.tar.gz
