@@ -5,11 +5,21 @@
  * - writeTexture bytesPerRow padded to 256
  * - uniform Params 16-byte aligned
  * - storage WSE size element-aligned
- * - async CPU readback via mapAsync
+ * - async CPU readback via mapAsync (typed errors)
+ * - optional indirect dispatch
  */
 
 import { packTextureRows, storageBufferSize, uniformBufferSize } from "./webgpuAlignment";
-import { readR32FloatTextureAsync, type DepthReadbackResult } from "./asyncTextureReadback";
+import {
+  readR32FloatTextureAsync,
+  DepthReadbackError,
+  type DepthReadbackResult,
+} from "./asyncTextureReadback";
+import {
+  clampWorkgroupCounts,
+  createIndirectDispatchBuffer,
+  workgroupsForGrid,
+} from "./indirectDispatch";
 
 export class HecRasDepthPipeline {
   private device: GPUDevice;
@@ -18,6 +28,7 @@ export class HecRasDepthPipeline {
   private demTexture: GPUTexture | null = null;
   private cellIndexTexture: GPUTexture | null = null;
   private wseBuffer: GPUBuffer | null = null;
+  private indirectBuffer: GPUBuffer | null = null;
   private wseCount = 0;
   private paramsBuffer: GPUBuffer;
   public depthOutTexture: GPUTexture | null = null;
@@ -76,6 +87,7 @@ export class HecRasDepthPipeline {
     );
     this.initDepthOutTexture();
     this.updateParams();
+    this.rebuildIndirectBuffer();
   }
 
   public async uploadCellIndexMap(width: number, height: number, data: Uint32Array): Promise<void> {
@@ -127,7 +139,6 @@ export class HecRasDepthPipeline {
   }
 
   private updateParams(): void {
-    // Params struct: vec2<u32> + u32 + i32 = 16 bytes (uniform-friendly).
     const paramsArray = new ArrayBuffer(uniformBufferSize(16));
     const dataView = new DataView(paramsArray);
     dataView.setUint32(0, this.width, true);
@@ -137,40 +148,79 @@ export class HecRasDepthPipeline {
     this.device.queue.writeBuffer(this.paramsBuffer, 0, paramsArray);
   }
 
-  public dispatchDepthBake(): GPUTexture {
+  private rebuildIndirectBuffer(): void {
+    this.indirectBuffer?.destroy();
+    let counts = workgroupsForGrid(this.width, this.height, 16, 16, 1);
+    counts = clampWorkgroupCounts(counts, this.device.limits);
+    this.indirectBuffer = createIndirectDispatchBuffer(
+      this.device,
+      counts,
+      "PTDT_DepthBakeIndirect",
+    );
+  }
+
+  private assertReady(): void {
     if (!this.demTexture || !this.cellIndexTexture || !this.wseBuffer || !this.depthOutTexture) {
       throw new Error("Pipeline incomplete: Missing dependent textures/buffers");
     }
     if (this.wseCount <= 0) {
       throw new Error("Pipeline incomplete: WSE array is empty");
     }
+  }
+
+  private beginBakePass(): { encoder: GPUCommandEncoder; pass: GPUComputePassEncoder; bindGroup: GPUBindGroup } {
+    this.assertReady();
     const bindGroup = this.device.createBindGroup({
       layout: this.bindGroupLayout,
       entries: [
-        { binding: 0, resource: this.demTexture.createView() },
-        { binding: 1, resource: this.cellIndexTexture.createView() },
-        { binding: 2, resource: { buffer: this.wseBuffer } },
-        { binding: 3, resource: this.depthOutTexture.createView() },
+        { binding: 0, resource: this.demTexture!.createView() },
+        { binding: 1, resource: this.cellIndexTexture!.createView() },
+        { binding: 2, resource: { buffer: this.wseBuffer! } },
+        { binding: 3, resource: this.depthOutTexture!.createView() },
         { binding: 4, resource: { buffer: this.paramsBuffer } },
       ],
     });
-    const commandEncoder = this.device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginComputePass();
-    passEncoder.setPipeline(this.pipeline);
-    passEncoder.setBindGroup(0, bindGroup);
-    passEncoder.dispatchWorkgroups(Math.ceil(this.width / 16), Math.ceil(this.height / 16), 1);
-    passEncoder.end();
-    this.device.queue.submit([commandEncoder.finish()]);
-    return this.depthOutTexture;
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(this.pipeline);
+    pass.setBindGroup(0, bindGroup);
+    return { encoder, pass, bindGroup };
+  }
+
+  /** Direct dispatch (default, deterministic). */
+  public dispatchDepthBake(): GPUTexture {
+    const { encoder, pass } = this.beginBakePass();
+    pass.dispatchWorkgroups(Math.ceil(this.width / 16), Math.ceil(this.height / 16), 1);
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+    return this.depthOutTexture!;
   }
 
   /**
-   * GPU → CPU depth readback after bake. Uses copyTextureToBuffer + mapAsync.
-   * Returns tightly packed Float32Array (padding stripped).
+   * Indirect dispatch using precomputed workgroup counts (16x16).
+   * Prefer direct unless GPU-driven counts are required.
+   */
+  public dispatchDepthBakeIndirect(): GPUTexture {
+    if (!this.indirectBuffer) {
+      this.rebuildIndirectBuffer();
+    }
+    const { encoder, pass } = this.beginBakePass();
+    pass.dispatchWorkgroupsIndirect(this.indirectBuffer!, 0);
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
+    return this.depthOutTexture!;
+  }
+
+  /**
+   * GPU → CPU depth readback after bake.
+   * Throws DepthReadbackError with code for soft-fail UI paths.
    */
   public async readDepthAsync(): Promise<DepthReadbackResult> {
     if (!this.depthOutTexture || this.width <= 0 || this.height <= 0) {
-      throw new Error("No depth texture to read back; call uploadDem + dispatchDepthBake first");
+      throw new DepthReadbackError(
+        "INVALID_DIMENSIONS",
+        "No depth texture to read back; call uploadDem + dispatchDepthBake first",
+      );
     }
     return readR32FloatTextureAsync(this.device, this.depthOutTexture, this.width, this.height);
   }
@@ -180,10 +230,12 @@ export class HecRasDepthPipeline {
     this.cellIndexTexture?.destroy();
     this.depthOutTexture?.destroy();
     this.wseBuffer?.destroy();
+    this.indirectBuffer?.destroy();
     this.paramsBuffer.destroy();
     this.demTexture = null;
     this.cellIndexTexture = null;
     this.depthOutTexture = null;
     this.wseBuffer = null;
+    this.indirectBuffer = null;
   }
 }
