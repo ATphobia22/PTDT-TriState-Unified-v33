@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package ptdt.v35.synthesis;
+
+service SpatialSynthesisStreamer {
+  rpc StreamHydraulicVoxelMatrix(MatrixStreamRequest) returns (stream VoxelMatrixFrame);
+  rpc VerifyLedgerNodeIntegrity(LedgerVerificationRequest) returns (LedgerVerificationResponse);
+}
+
+message MatrixStreamRequest {
+  string project_node_id = 1;
+  uint32 target_zoom_level = 2;
+  bool requested_pki_signature_validation = 3;
+}
+
+message CoordinateECEF {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message VoxelMatrixFrame {
+  uint64 timestamp_epoch_ms = 1;
+  uint32 timestep_index = 2;
+  float calculated_wse_navd88_ft = 3;
+  CoordinateECEF geocentric_anchor_epsg4978 = 4;
+  string evidence_sha256 = 5;
+  bytes depth_voxels_float32_le = 6;
+}
+
+message LedgerVerificationRequest {
+  string target_node_id = 1;
+  string declared_evidence_hash = 2;
+}
+
+message LedgerVerificationResponse {
+  bool is_immutable_chain_valid = 1;
+  string verification_message = 2;
+  string primary_assessor_signatory = 3;
+}
