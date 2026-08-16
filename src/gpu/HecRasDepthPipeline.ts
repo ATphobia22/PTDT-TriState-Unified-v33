@@ -2,8 +2,15 @@
 
 /**
  * WebGPU depth bake: DEM + cell_index_map + WSE_mm → r32float depth.
- * bytesPerRow padded to 256 for writeTexture.
+ * - writeTexture bytesPerRow padded to 256
+ * - uniform Params 16-byte aligned
+ * - storage WSE size element-aligned
+ * - async CPU readback via mapAsync
  */
+
+import { packTextureRows, storageBufferSize, uniformBufferSize } from "./webgpuAlignment";
+import { readR32FloatTextureAsync, type DepthReadbackResult } from "./asyncTextureReadback";
+
 export class HecRasDepthPipeline {
   private device: GPUDevice;
   private pipeline: GPUComputePipeline;
@@ -11,6 +18,7 @@ export class HecRasDepthPipeline {
   private demTexture: GPUTexture | null = null;
   private cellIndexTexture: GPUTexture | null = null;
   private wseBuffer: GPUBuffer | null = null;
+  private wseCount = 0;
   private paramsBuffer: GPUBuffer;
   public depthOutTexture: GPUTexture | null = null;
   private width = 0;
@@ -19,7 +27,7 @@ export class HecRasDepthPipeline {
   constructor(device: GPUDevice, shaderCode: string) {
     this.device = device;
     this.paramsBuffer = this.device.createBuffer({
-      size: 16,
+      size: uniformBufferSize(16),
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -48,19 +56,18 @@ export class HecRasDepthPipeline {
   }
 
   public async uploadDem(width: number, height: number, demData: Float32Array): Promise<void> {
+    if (demData.length < width * height) {
+      throw new RangeError(`DEM length ${demData.length} < width*height (${width * height})`);
+    }
     this.width = width;
     this.height = height;
+    this.demTexture?.destroy();
     this.demTexture = this.device.createTexture({
       size: [width, height],
       format: "r32float",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
-    const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
-    const padded = new Uint8Array(bytesPerRow * height);
-    const src = new Uint8Array(demData.buffer, demData.byteOffset, demData.byteLength);
-    for (let y = 0; y < height; y++) {
-      padded.set(src.subarray(y * width * 4, (y + 1) * width * 4), y * bytesPerRow);
-    }
+    const { padded, bytesPerRow } = packTextureRows(demData, width, height, 4);
     this.device.queue.writeTexture(
       { texture: this.demTexture },
       padded,
@@ -72,17 +79,19 @@ export class HecRasDepthPipeline {
   }
 
   public async uploadCellIndexMap(width: number, height: number, data: Uint32Array): Promise<void> {
+    if (data.length < width * height) {
+      throw new RangeError(`cell index length ${data.length} < width*height (${width * height})`);
+    }
+    if (width !== this.width || height !== this.height) {
+      throw new RangeError("cell index map dimensions must match DEM");
+    }
+    this.cellIndexTexture?.destroy();
     this.cellIndexTexture = this.device.createTexture({
       size: [width, height],
       format: "r32uint",
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
-    const bytesPerRow = Math.ceil((width * 4) / 256) * 256;
-    const padded = new Uint8Array(bytesPerRow * height);
-    const src = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-    for (let y = 0; y < height; y++) {
-      padded.set(src.subarray(y * width * 4, (y + 1) * width * 4), y * bytesPerRow);
-    }
+    const { padded, bytesPerRow } = packTextureRows(data, width, height, 4);
     this.device.queue.writeTexture(
       { texture: this.cellIndexTexture },
       padded,
@@ -93,11 +102,12 @@ export class HecRasDepthPipeline {
 
   public uploadWseMm(wseMm: Int32Array): void {
     const copy = new Int32Array(wseMm);
-    const byteLength = copy.byteLength;
+    const byteLength = storageBufferSize(copy.byteLength, 4);
+    this.wseCount = copy.length;
     if (!this.wseBuffer || this.wseBuffer.size < byteLength) {
       this.wseBuffer?.destroy();
       this.wseBuffer = this.device.createBuffer({
-        size: Math.max(byteLength, 4),
+        size: byteLength,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       });
     }
@@ -117,7 +127,8 @@ export class HecRasDepthPipeline {
   }
 
   private updateParams(): void {
-    const paramsArray = new ArrayBuffer(16);
+    // Params struct: vec2<u32> + u32 + i32 = 16 bytes (uniform-friendly).
+    const paramsArray = new ArrayBuffer(uniformBufferSize(16));
     const dataView = new DataView(paramsArray);
     dataView.setUint32(0, this.width, true);
     dataView.setUint32(4, this.height, true);
@@ -129,6 +140,9 @@ export class HecRasDepthPipeline {
   public dispatchDepthBake(): GPUTexture {
     if (!this.demTexture || !this.cellIndexTexture || !this.wseBuffer || !this.depthOutTexture) {
       throw new Error("Pipeline incomplete: Missing dependent textures/buffers");
+    }
+    if (this.wseCount <= 0) {
+      throw new Error("Pipeline incomplete: WSE array is empty");
     }
     const bindGroup = this.device.createBindGroup({
       layout: this.bindGroupLayout,
@@ -148,5 +162,28 @@ export class HecRasDepthPipeline {
     passEncoder.end();
     this.device.queue.submit([commandEncoder.finish()]);
     return this.depthOutTexture;
+  }
+
+  /**
+   * GPU → CPU depth readback after bake. Uses copyTextureToBuffer + mapAsync.
+   * Returns tightly packed Float32Array (padding stripped).
+   */
+  public async readDepthAsync(): Promise<DepthReadbackResult> {
+    if (!this.depthOutTexture || this.width <= 0 || this.height <= 0) {
+      throw new Error("No depth texture to read back; call uploadDem + dispatchDepthBake first");
+    }
+    return readR32FloatTextureAsync(this.device, this.depthOutTexture, this.width, this.height);
+  }
+
+  public destroy(): void {
+    this.demTexture?.destroy();
+    this.cellIndexTexture?.destroy();
+    this.depthOutTexture?.destroy();
+    this.wseBuffer?.destroy();
+    this.paramsBuffer.destroy();
+    this.demTexture = null;
+    this.cellIndexTexture = null;
+    this.depthOutTexture = null;
+    this.wseBuffer = null;
   }
 }
