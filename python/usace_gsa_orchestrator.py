@@ -1,23 +1,22 @@
 """
 PTDT USACE GSA orchestrator
 Sobol/Saltelli design → (optional) HEC-RAS plan → sealed WSE extract.
-
-Invariants:
-- HEC-RAS WSE is authoritative when present
-- Soft-fail if plan HDF / ras-commander unavailable
-- No fabricated hydraulic results
-- SHA-256 seals on design + WSE for evidence packages
 """
 from __future__ import annotations
 
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
-
 import json
+import sys
 
-from sobol_sampler import generate_gsa_design, default_hydraulic_gsa_bounds
-from hecras_pipeline import HecRasPipeline
+# Package-safe imports: allow `python python/usace_gsa_orchestrator.py` and package use
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
+from sobol_sampler import generate_gsa_design, default_hydraulic_gsa_bounds  # noqa: E402
+from hecras_pipeline import HecRasPipeline  # noqa: E402
 
 
 def _canonical_seal(payload: Mapping[str, Any]) -> str:
@@ -30,14 +29,12 @@ def run_gsa_design_only(
     seed: int = 42,
     bounds: Mapping[str, tuple[float, float]] | None = None,
 ) -> dict[str, Any]:
-    """Phase 1: sealed parameter design (no RAS required)."""
     design = generate_gsa_design(
         n_base=n_base,
         bounds=bounds or default_hydraulic_gsa_bounds(),
         seed=seed,
         calc_second_order=False,
     )
-    # Drop large matrix from return if caller only needs metadata+seal
     return {
         "status": design["status"],
         "phase": "DESIGN_ONLY",
@@ -46,6 +43,7 @@ def run_gsa_design_only(
         "n_cols": design["n_cols"],
         "design_seal": design["seal"],
         "meta": design["meta"],
+        "problem": design.get("problem"),
         "matrix": design["matrix"],
     }
 
@@ -55,7 +53,6 @@ def try_compute_plan(
     plan: str = "01",
     ras_version: str = "6.5",
 ) -> dict[str, Any]:
-    """Attempt ras-commander compute; soft-fail if unavailable."""
     project_dir = str(project_dir)
     try:
         from hec_ras_bridge import run_plan_ras_commander
@@ -81,7 +78,6 @@ def extract_sealed_wse(
     flow_area: str = "Wabash_Confluence",
     timestep_index: int = 0,
 ) -> dict[str, Any]:
-    """Authoritative WSE extract via HecRasPipeline (soft-fail)."""
     pipe = HecRasPipeline(str(plan_hdf))
     return pipe.extract_wse_mm(flow_area=flow_area, timestep_index=timestep_index)
 
@@ -97,13 +93,6 @@ def orchestrate(
     timestep_index: int = 0,
     run_compute: bool = False,
 ) -> dict[str, Any]:
-    """
-    Full orchestration:
-    1) Sobol design seal
-    2) Optional plan compute (ras-commander)
-    3) Optional WSE extract from plan HDF
-    4) Aggregate evidence envelope
-    """
     design = run_gsa_design_only(n_base=n_base, seed=seed)
     compute_result: dict[str, Any] | None = None
     if run_compute and project_dir is not None:
@@ -121,14 +110,14 @@ def orchestrate(
         "design_seal": design["design_seal"],
         "design_n_rows": design["n_rows"],
         "parameter_names": design["parameter_names"],
+        "n_model_runs": (design.get("meta") or {}).get("n_model_runs"),
         "compute_status": (compute_result or {}).get("status", "SKIPPED"),
         "wse_status": (wse_result or {}).get("status", "SKIPPED"),
         "wse_seal": (wse_result or {}).get("seal"),
         "crs": (wse_result or {}).get("crs"),
         "vertical_datum": (wse_result or {}).get("vertical_datum"),
     }
-    master = _canonical_seal(envelope)
-    envelope["master_seal"] = master
+    envelope["master_seal"] = _canonical_seal(envelope)
 
     return {
         "status": "OK",
@@ -138,7 +127,6 @@ def orchestrate(
             {k: v for k, v in wse_result.items() if k != "data"} if wse_result else None
         ),
         "envelope": envelope,
-        # matrix available under design only when DESIGN_ONLY helper used with matrix kept
         "matrix": design.get("matrix"),
     }
 

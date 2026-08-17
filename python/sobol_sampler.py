@@ -23,7 +23,6 @@ try:
 except ImportError as exc:  # pragma: no cover
     raise ImportError("numpy is required for sobol_sampler") from exc
 
-# Optional SciPy QMC (preferred when available)
 try:
     from scipy.stats import qmc as _scipy_qmc
 
@@ -34,20 +33,25 @@ except ImportError:
 SCHEMA_VERSION: Final[int] = 1
 
 
-def _next_power_of_two(n: int) -> int:
-    if n <= 1:
-        return 1
-    return 1 << (n - 1).bit_length()
+def saltelli_n_model_runs(n_base: int, n_params: int, *, calc_second_order: bool = False) -> int:
+    """
+    Total model evaluations required by a Saltelli design.
+
+    First + total order only:  N * (D + 2)
+    With second-order pairs:   N * (2*D + 2)
+
+    N = n_base (base Sobol sample size; prefer power of 2 for balance).
+    D = n_params.
+    """
+    if n_base < 1 or n_params < 1:
+        raise ValueError("n_base and n_params must be ≥ 1")
+    if calc_second_order:
+        return int(n_base * (2 * n_params + 2))
+    return int(n_base * (n_params + 2))
 
 
 def _direction_numbers(dim: int, bits: int = 32) -> list[list[int]]:
-    """
-    Minimal direction numbers for low dimension Sobol' (Joe-Kuo style subset).
-    Sufficient for typical hydraulic GSA factor counts (≤ 20).
-    For production high-D prefer scipy.stats.qmc.Sobol.
-    """
-    # Primitive polynomials and initial direction numbers (standard small set)
-    # dim 0 is special-cased as van der Corput binary.
+    """Minimal direction numbers for low-dimension Sobol' fallback (≤20 dims)."""
     poly = [1, 3, 7, 11, 13, 19, 25, 37, 59, 47, 61, 55, 41, 67, 97, 91, 109, 103, 115, 131]
     m_init: list[list[int]] = [
         [1],
@@ -75,7 +79,6 @@ def _direction_numbers(dim: int, bits: int = 32) -> list[list[int]]:
             f"Fallback Sobol supports dim ≤ {len(m_init) + 1}; install scipy for higher D"
         )
     directions: list[list[int]] = []
-    # Dimension 0
     d0 = [1 << (bits - 1 - k) for k in range(bits)]
     directions.append(d0)
     for j in range(1, dim):
@@ -93,7 +96,6 @@ def _direction_numbers(dim: int, bits: int = 32) -> list[list[int]]:
 
 
 def _sobol_unit_fallback(n: int, dim: int, skip: int = 0) -> np.ndarray:
-    """Generate n×dim points in [0,1)^dim (unscrambled, deterministic)."""
     bits = 32
     directions = _direction_numbers(dim, bits)
     out = np.zeros((n, dim), dtype=np.float64)
@@ -117,24 +119,17 @@ def sobol_unit_samples(
     scramble: bool = True,
     skip: int = 0,
 ) -> np.ndarray:
-    """
-    Draw n samples of dimension dim in the unit hypercube [0, 1)^dim.
-
-    Prefers scipy.stats.qmc.Sobol when available; otherwise uses a bounded
-    pure-Python/NumPy fallback (dim ≤ 20).
-    """
+    """Draw n samples of dimension dim in [0, 1)^dim."""
     if n < 1 or dim < 1:
         raise ValueError("n and dim must be ≥ 1")
     if _HAS_SCIPY_QMC:
         engine = _scipy_qmc.Sobol(d=dim, scramble=scramble, seed=seed)
         if skip > 0:
             engine.fast_forward(skip)
-        # Prefer power-of-two draws for best balance; still return exactly n
         m = max(1, int(math.ceil(math.log2(max(n, 2)))))
         pts = engine.random_base2(m=m)
         return np.asarray(pts[:n], dtype=np.float64)
     if scramble and seed is not None:
-        # Lightweight deterministic scramble of fallback points
         rng = np.random.default_rng(seed)
         shifts = rng.random(dim)
         base = _sobol_unit_fallback(n, dim, skip=skip)
@@ -146,7 +141,6 @@ def scale_to_bounds(
     unit_samples: np.ndarray,
     bounds: Sequence[tuple[float, float]],
 ) -> np.ndarray:
-    """Map unit-hypercube samples to [low, high] per dimension."""
     unit = np.asarray(unit_samples, dtype=np.float64)
     if unit.ndim != 2:
         raise ValueError("unit_samples must be 2-D (n, dim)")
@@ -169,24 +163,20 @@ def saltelli_sample_matrix(
     scramble: bool = True,
 ) -> np.ndarray:
     """
-    Build a Saltelli-style sample matrix for Sobol' index estimation.
+    Saltelli-style sample matrix.
 
-    Rows = N*(D+2) if calc_second_order is False, else N*(2D+2).
-    Columns = D (one per parameter).
-
-    This matrix is intended for model evaluation Y = f(X); analysis of Y
-    yields first/total (and optional second-order) Sobol' indices.
+    Rows = saltelli_n_model_runs(n_base, D, calc_second_order=...)
+    Columns = D.
     """
     d = len(bounds)
     if d < 1:
         raise ValueError("at least one parameter bound required")
-    # Saltelli needs 2D columns of unit Sobol, then A/B and cross matrices
     unit = sobol_unit_samples(
         n_base,
         2 * d,
         seed=seed,
         scramble=scramble,
-        skip=1,  # skip origin for numerical stability with some transforms
+        skip=1,
     )
     a = unit[:, :d]
     b = unit[:, d:]
@@ -201,11 +191,13 @@ def saltelli_sample_matrix(
             ba_i[:, i] = a[:, i]
             rows.append(ba_i)
     mat_unit = np.vstack(rows)
+    expected = saltelli_n_model_runs(n_base, d, calc_second_order=calc_second_order)
+    if mat_unit.shape[0] != expected:
+        raise RuntimeError(f"row count {mat_unit.shape[0]} != expected {expected}")
     return scale_to_bounds(mat_unit, bounds)
 
 
 def seal_sample_matrix(matrix: np.ndarray, meta: Mapping[str, Any] | None = None) -> str:
-    """SHA-256 over canonical JSON of rounded samples + metadata (evidence)."""
     payload = {
         "schema_version": SCHEMA_VERSION,
         "shape": list(matrix.shape),
@@ -217,16 +209,23 @@ def seal_sample_matrix(matrix: np.ndarray, meta: Mapping[str, Any] | None = None
 
 
 def default_hydraulic_gsa_bounds() -> dict[str, tuple[float, float]]:
-    """
-    Example factor bounds for PTDT / HEC-RAS 2D GSA (illustrative only).
-    Operator must replace with calibrated study ranges; values are not regulatory.
-    """
+    """Illustrative only — replace with calibrated study ranges."""
     return {
         "manning_channel": (0.025, 0.045),
         "manning_floodplain": (0.04, 0.12),
         "mesh_cell_ft": (25.0, 200.0),
         "dem_cell_m": (1.0, 10.0),
         "upstream_peak_scale": (0.85, 1.15),
+    }
+
+
+def problem_dict_from_bounds(bounds: Mapping[str, tuple[float, float]]) -> dict[str, Any]:
+    """SALib-compatible problem definition."""
+    names = list(bounds.keys())
+    return {
+        "num_vars": len(names),
+        "names": names,
+        "bounds": [list(bounds[n]) for n in names],
     }
 
 
@@ -237,9 +236,6 @@ def generate_gsa_design(
     seed: int = 42,
     calc_second_order: bool = False,
 ) -> dict[str, Any]:
-    """
-    Convenience: named parameters → sealed Saltelli design for RAS batch runs.
-    """
     bmap = dict(bounds or default_hydraulic_gsa_bounds())
     names = list(bmap.keys())
     bound_list = [bmap[k] for k in names]
@@ -254,6 +250,9 @@ def generate_gsa_design(
         "n_base": n_base,
         "seed": seed,
         "calc_second_order": calc_second_order,
+        "n_model_runs": saltelli_n_model_runs(
+            n_base, len(names), calc_second_order=calc_second_order
+        ),
         "scipy_qmc": _HAS_SCIPY_QMC,
     }
     digest = seal_sample_matrix(matrix, meta)
@@ -265,10 +264,14 @@ def generate_gsa_design(
         "n_cols": int(matrix.shape[1]),
         "seal": digest,
         "meta": meta,
+        "problem": problem_dict_from_bounds(bmap),
     }
 
 
 if __name__ == "__main__":
     design = generate_gsa_design(n_base=16, seed=7)
-    print(f"status={design['status']} rows={design['n_rows']} seal={design['seal'][:16]}…")
+    print(
+        f"status={design['status']} rows={design['n_rows']} "
+        f"n_model_runs={design['meta']['n_model_runs']} seal={design['seal'][:16]}…"
+    )
     print("parameters:", design["parameter_names"])
