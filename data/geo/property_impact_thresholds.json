@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "site": "13101 Bonebank Road, Point Township, Posey County, IN",
+  "gauge": {
+    "name": "Ohio River at J.T. Myers Lock and Dam",
+    "nws_id": "UNWK2",
+    "usgs_site": "03322420",
+    "role": "navigation_not_flood_control",
+    "nws_url": "https://water.noaa.gov/gauges/unwk2"
+  },
+  "authority_note": "Stages are operational early-warning (family ground truth). LOMA uses sealed NAVD88 BFE/LAG/FFE only.",
+  "regulatory_navd88_ft": {
+    "bfe": 375.0,
+    "lag": 377.2,
+    "ffe": 382.5
+  },
+  "thresholds_myers_stage_ft": [
+    {"stage_ft": 54.93, "code": "ALERT", "location": "dock", "description": "Dock bank full"},
+    {"stage_ft": 55.55, "code": "WARNING", "location": "swain_bridge_ohio", "description": "Bridge top begins flowing from Ohio side"},
+    {"stage_ft": 55.85, "code": "WARNING", "location": "swain_bridge", "description": "Water at top of bridge"},
+    {"stage_ft": 56.25, "code": "WARNING", "location": "swain_bridge", "description": "Water over top of bridge"},
+    {"stage_ft": 56.75, "code": "DANGER", "location": "road_past_bridge", "description": "Road floods past bridge; may be impassable"},
+    {"stage_ft": 57.25, "code": "DANGER", "location": "near_structures", "description": "Water near Bobby's house; pole barn ~3 ft less"},
+    {"stage_ft": 57.85, "code": "DANGER", "location": "barn", "description": "Water at barn; ~5 ft from house"},
+    {"stage_ft": 58.15, "code": "CRITICAL", "location": "property_center", "description": "Water at center of property"},
+    {"stage_ft": 58.45, "code": "CRITICAL", "location": "house_floor", "description": "Water at house floor level"},
+    {"stage_ft": 58.75, "code": "CRITICAL", "location": "house_floor_high", "description": "Water at house floor level (high reading)"}
+  ],
+  "cross_check_stations": [
+    "Shawneetown IL (Ohio upstream)",
+    "New Harmony IN (Wabash)",
+    "Mt. Vernon IN",
+    "Evansville IN"
+  ],
+  "source": "Tucker Family Flood History and Heritage workbook — Property Reference Points; NWS/USGS gauge metadata"
+}
