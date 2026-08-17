@@ -1,6 +1,6 @@
 # Verified CRS, BAFL, and HEC-RAS HDF authority (government / USACE)
 
-Sources: EPSG registry, IDNR Division of Water, IGIO, FEMA CIS/FIS, HEC-RAS 2D User Manual (HDF output).
+Sources: EPSG registry, NGS State Plane policy, IDNR Division of Water, IGIO, FEMA CIS/FIS, HEC-RAS 2D User Manual (HDF output).
 
 ## 1. Indiana NAD83 State Plane zones
 
@@ -11,31 +11,52 @@ Sources: EPSG registry, IDNR Division of Water, IGIO, FEMA CIS/FIS, HEC-RAS 2D U
 | **2965** | NAD83 / Indiana **East** (ftUS) | US survey foot | No — eastern counties |
 | **26973** | NAD83 / Indiana East | metre | No |
 
-**EPSG:2966 parameters (NGS / EPSG):** Transverse Mercator  
-- latitude_of_origin = **37.5**  
-- central_meridian = **-87.0833333333333** (−87°05')  
-- scale_factor = **0.999966667**  
-- false_easting = **900000** US ft  
-- false_northing = **250000** US ft  
-- ellipsoid GRS80 / NAD83  
+**EPSG:2966 parameters (NGS / EPSG official):** Transverse Mercator
 
-State law uses **US survey feet** → prefer **2966** for local engineering coordinates.  
+| Parameter | Value |
+|-----------|--------|
+| latitude_of_origin | **37.5** |
+| central_meridian | **-87.0833333333333** (−87°05′) |
+| scale_factor | **0.999966667** |
+| false_easting | **2,952,750** US survey feet |
+| false_northing | **820,208.333** US survey feet |
+| ellipsoid | GRS80 / NAD83 |
+| unit | US survey foot (0.304800609601219 m) |
+
+State practice uses **US survey feet** → prefer **2966** for local engineering coordinates.  
 Metric twin: **26974**.
 
 **Do not** use EPSG:26916 (UTM) as the PTDT engineering horizontal CRS. UTM is the **native BAFL delivery CRS only**.
 
+```wkt
+PROJCS["NAD83 / Indiana West (ftUS)",
+  GEOGCS["NAD83",
+    DATUM["North_American_Datum_1983",
+      SPHEROID["GRS 1980",6378137,298.257222101]],
+    PRIMEM["Greenwich",0],
+    UNIT["degree",0.0174532925199433]],
+  PROJECTION["Transverse_Mercator"],
+  PARAMETER["latitude_of_origin",37.5],
+  PARAMETER["central_meridian",-87.0833333333333],
+  PARAMETER["scale_factor",0.999966667],
+  PARAMETER["false_easting",2952750],
+  PARAMETER["false_northing",820208.333],
+  UNIT["US survey foot",0.304800609601219],
+  AUTHORITY["EPSG","2966"]]
+```
+
 ## 2. BAFL shapefile coordinate system (IDNR)
 
-Official IDNR text (Best Available Floodplain Mapping page):
+Official IDNR text (Best Available Floodplain Mapping) and Posey `.shp.xml`:
 
-> Each zip file contains ESRI shapefiles, referenced to **Universal Transverse Mercator (UTM) horizontal datum (Zone 16, meters, NAD 1983)**.
+> ESRI shapefiles referenced to **UTM Zone 16N, metres, NAD 1983** → **EPSG:26916**.
 
 | Item | Verified value |
 |---|---|
 | Native horizontal CRS | **EPSG:26916** (NAD83 / UTM zone 16N, metres) |
-| MapServer SR | **26916** (gisdata.in.gov Best_Available_Flood_Hazard_Layer) |
-| Layer name | `FloodHazard_BestAvai_DNR_Water` |
-| Elev points | `Flood_Elevation_Pts_DNR_Water` — BFE **NAVD88** |
+| Polygons | `FloodHazard_BestAvai_DNR_Water` |
+| Elev points | `Flood_Elevation_Pts_DNR_Water` — fields include `wsel1` (100-yr), `streamname`; vertical **NAVD88** intent |
+| Symbology fields | `fld_zone` + `source_dnr` + `zone_subty` |
 | Insurance use | **Not** for mandatory insurance (use effective FIRM/NFHL) |
 | Regulatory use | Planning / construction / Flood Control Act; local ordinance may adopt BAFL |
 
