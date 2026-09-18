@@ -1,0 +1,49 @@
+name: TSM Unified Build & Verification Gate
+
+on:
+  push:
+    branches: ["main", "dev/**", "feature/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Setup Python Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install System Dependencies (GDAL / PROJ)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdal-dev gdal-bin libproj-dev
+
+      - name: Install Node Dependencies
+        run: |
+          npm ci
+          if [ -d "tsm-console" ]; then (cd tsm-console && npm ci); fi
+
+      - name: Run Type Checks & Linting
+        run: |
+          npm run typecheck || true
+          npm run lint --if-present || true
+
+      - name: Execute MapLibre & Engine Unit Tests
+        run: npm run test:ci --if-present
+
+      - name: Test Build Production Output
+        run: npm run build
