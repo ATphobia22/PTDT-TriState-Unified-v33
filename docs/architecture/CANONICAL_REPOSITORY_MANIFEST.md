@@ -45,6 +45,11 @@ Consolidation branch: `consolidation/ptdt-unified-canonical`
 | `ATphobia22/noodles` | Unclassified supplied repository | AUDIT FIRST | No runtime disposition until capability audit |
 | `ATphobia22/Aurora` | Graphics/rendering candidate | AUDIT FIRST | No runtime authority until capability audit |
 | `ATphobia22/glTF-MaterialX-Converterq` | glTF/MaterialX conversion candidate | AUDIT/CORRECT PATH | Supplied GitHub path currently resolves 404; do not substitute silently |
+| `ATphobia22/operateGPT` | Multi-agent + multimodal content orchestration | WRAP / REIMPLEMENT PATTERNS | Task decomposition, provider abstraction, multimodal artifact workflows |
+| `ATphobia22/lmms-eval` | Multimodal/agentic model evaluation | RETAIN / ADAPT | AI Governance evaluation ledger, regression gates, statistical methodology |
+| `ATphobia22/sdnext` | Image/video generation + quantization/offload | WRAP / OPTIONAL MEDIA WORKER | Isolated cinematic/media generation backend |
+| `ATphobia22/locally-uncensored` | Local AI studio + coding agent + MCP + backend routing | REFERENCE / ADAPT | Local runtime discovery, permission model, offline/VRAM-aware patterns |
+| `ATphobia22/HiFox` | Insufficient source evidence | AUDIT FIRST | Available README provides no substantive capability description |
 
 ## Active authority matrix
 
@@ -61,6 +66,9 @@ Consolidation branch: `consolidation/ptdt-unified-canonical`
 - Human/exposure context: PTDT-native derived metrics; external datasets remain evidence-bearing inputs
 - Scene description: OpenUSD scene artifacts downstream of canonical Engineering State
 - Visualization: MapLibre/Three.js/WebGPU/Hydra; non-authoritative
+- AI evaluation: canonical PTDT evaluation ledger/schema to be implemented from `lmms-eval` methodology
+- Agent execution: policy-gated PTDT agent runtime; external agent frameworks are adapters/references
+- Cinematic media generation: isolated media workers downstream of SceneState; generated media is non-authoritative
 
 ## Deduplication invariant
 
@@ -73,3 +81,7 @@ Additional federation invariants:
 - OSM catalog/reference repositories do not become data authorities by inclusion.
 - DCC/USD tooling cannot write directly to authoritative engineering state.
 - Derived scene artifacts must retain parent engineering/evidence identifiers.
+- AI models and agent runtimes cannot become engineering or regulatory authorities.
+- AI evaluation results are evidence-bearing but do not override scientific model outputs.
+- Generated media cannot mutate authoritative engineering state.
+- Agent tools require explicit capability/permission policies and auditable execution records.
